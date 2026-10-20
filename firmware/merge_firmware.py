@@ -5,10 +5,10 @@ def merge_bin(source, target, env):
     firmware = str(target[0])
     board = env.BoardConfig()
     mcu = board.get("build.mcu", "esp32")
-    flash_mode = env.GetProjectOption("board_build.flash_mode", "dio")
-    flash_freq = board.get("build.f_flash", "40000000L").replace("L", "")
+    flash_mode = env.GetProjectOption("board_build.flash_mode", board.get("build.flash_mode", "dio"))
+    flash_freq = env.GetProjectOption("board_build.f_flash", board.get("build.f_flash", "40000000L")).replace("L", "")
     flash_freq_m = str(int(int(flash_freq) / 1000000)) + "m"
-    flash_size = board.get("upload.flash_size", "4MB")
+    flash_size = env.GetProjectOption("board_upload.flash_size", board.get("upload.flash_size", "4MB"))
 
     esptool = os.path.join(
         env.PioPlatform().get_package_dir("tool-esptoolpy") or "",

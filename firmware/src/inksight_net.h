@@ -47,8 +47,11 @@ bool connectWiFi();
 // ── HTTP ────────────────────────────────────────────────────
 
 // Fetch BMP image from backend and store in imgBuf. Returns true on success.
-// If nextMode is true, appends &next=1 to request the next mode in sequence.
-bool fetchBMP(bool nextMode = false, bool *isFallback = nullptr, String *renderedModeIdOut = nullptr);
+// If modeStep > 0 appends &next=1, if modeStep < 0 appends &prev=1.
+bool fetchBMP(int modeStep, bool *isFallback = nullptr, String *renderedModeIdOut = nullptr);
+inline bool fetchBMP(bool nextMode = false, bool *isFallback = nullptr, String *renderedModeIdOut = nullptr) {
+    return fetchBMP(nextMode ? 1 : 0, isFallback, renderedModeIdOut);
+}
 
 // Check whether backend has pending refresh/switch request for this device.
 // If shouldExitLive is not null, it is set to true when backend runtime_mode is interval.

@@ -42,4 +42,10 @@ void smartDisplay(const uint8_t *image);
 // Show mode name preview screen (displayed briefly on double-click before loading)
 void showModePreview(const char *modeName);
 
+// Sleep indicator badge on corner (fast refresh)
+void showSleepBadge(int nextRefreshMin = 0);
+
+// Full-screen shutdown message card
+void showShutdownScreen();
+
 #endif // INKSIGHT_DISPLAY_H

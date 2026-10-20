@@ -148,6 +148,12 @@ body{font-family:var(--f);background:linear-gradient(135deg,#f5f5f0,#e8e8e0);col
 </div>
 </div>
 </div>
+<div class="fg" style="margin-top:10px;margin-bottom:14px">
+<label style="display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--bk);cursor:pointer;user-select:none">
+<input type="checkbox" id="insecTlsIn" style="accent-color:var(--bk);width:15px;height:15px;cursor:pointer">
+<span id="lblInsecTls">跳过 TLS 证书验证（不安全，仅用于调试）</span>
+</label>
+</div>
 <button class="btn btn-ghost" id="cBtn" onclick="doConnect()"><span class="bt" id="btnConnText">连接并保存</span><div class="sp"></div></button>
 <button class="btn" id="addBtn" onclick="doAddOnly()" style="margin-top:8px;background:var(--bg);color:var(--bk);border:1px solid var(--bd);font-size:.82rem;padding:10px"><span class="bt" id="btnAddText">仅保存到列表</span><div class="sp"></div></button>
 <div id="addHint" style="font-size:.68rem;color:var(--gy);margin-top:5px;text-align:center">连不上的网络（如办公室/手机热点）可仅保存，开机会按顺序尝试</div>
@@ -230,6 +236,7 @@ lblFirmware:"固件:",
 lblBat:"电池:",
 lblSsid:"WiFi 名称 (SSID)",
 lblPw:"WiFi 密码",
+lblInsecTls:"跳过 TLS 证书验证（不安全，仅用于调试）",
 stWait:"等待配网...",
 errSsid:"请选择或输入 WiFi",
 errPw:"请输入密码",
@@ -291,6 +298,7 @@ lblFirmware:"Firmware:",
 lblBat:"Battery:",
 lblSsid:"WiFi Name (SSID)",
 lblPw:"WiFi Password",
+lblInsecTls:"Skip TLS verification (insecure)",
 stWait:"Waiting for setup...",
 errSsid:"Please select or enter WiFi",
 errPw:"Please enter password",
@@ -350,6 +358,7 @@ document.getElementById('cdSuffix').textContent=t('cdSuffix');
 document.getElementById('btnReSetup').textContent=t('btnReSetup');
 document.getElementById('lblFirmware').textContent=t('lblFirmware');
 document.getElementById('lblBat').textContent=t('lblBat');
+if(document.getElementById('lblInsecTls'))document.getElementById('lblInsecTls').textContent=t('lblInsecTls');
 var pSt=document.getElementById('pSt');
 if(pSt.textContent===i18n[lang==='zh'?'en':'zh'].stWait)pSt.textContent=t('stWait');
 document.getElementById('langBtn').textContent=lang==='zh'?'EN':'中';
@@ -472,6 +481,7 @@ btn.classList.add('ld');btn.disabled=true;
 st.className='st c';st.textContent=t('msgConn')+s+' ...';
 
 var fd=new FormData();fd.append('ssid',s);fd.append('pass',p);if(srvUrl)fd.append('server',srvUrl);
+if(document.getElementById('insecTlsIn'))fd.append('insec_tls',document.getElementById('insecTlsIn').checked?'1':'0');
 fetch('/save_wifi',{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(d){
 btn.classList.remove('ld');btn.disabled=false;
 if(d.ok){
@@ -594,6 +604,7 @@ if(!setServerForConnect(st))return;
 btn.disabled=true;
 st.className='st c';st.textContent=t('msgConn')+name+' ...';
 var fd=new FormData();fd.append('ssid',name);if(srvUrl)fd.append('server',srvUrl);
+if(document.getElementById('insecTlsIn'))fd.append('insec_tls',document.getElementById('insecTlsIn').checked?'1':'0');
 fetch('/connect_saved',{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(d){
 btn.disabled=false;
 if(d&&d.list){renderSaved(d.list);}
@@ -666,6 +677,9 @@ document.getElementById('wScanLoading').innerHTML='扫描失败，请刷新页�
 });
 
 fetch('/info').then(function(r){return r.json()}).then(function(d){
+if(typeof d.insec_tls!=='undefined'&&document.getElementById('insecTlsIn')){
+document.getElementById('insecTlsIn').checked=!!d.insec_tls;
+}
 if(d.mac){devMac=d.mac;document.getElementById('devMAC').textContent=d.mac;}
 if(d.battery)document.getElementById('devBat').textContent=d.battery;
 if(d.server_url){

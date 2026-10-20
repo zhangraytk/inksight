@@ -23,7 +23,7 @@
 #include "audio_codec.h"
 #include "audio_service.h"
 #endif
-#include "network.h"
+#include "inksight_net.h"
 #include "storage.h"
 #include "portal.h"
 
@@ -32,6 +32,19 @@
 #include "display.h"
 #include "offline_cache.h"
 #endif
+
+#if defined(BOARD_PROFILE_XTEINK_X4)
+#include "x4_power.h"
+#include "x4_buttons.h"
+#endif
+
+static void logMemoryDiagnostics(const char *tag) {
+    uint32_t freeH = ESP.getFreeHeap();
+    uint32_t minH = ESP.getMinFreeHeap();
+    uint32_t maxAlloc = ESP.getMaxAllocHeap();
+    Serial.printf("[MEM-%s] Free=%u MinFree=%u MaxAlloc=%u\n",
+                  tag ? tag : "STATUS", freeH, minH, maxAlloc);
+}
 
 // ── Shared framebuffers (referenced by other modules via extern) ──
 uint8_t imgBuf[IMG_BUF_LEN];
@@ -391,7 +404,10 @@ static bool fetchAndDisplayVocabPack() {
 #endif
 
 static void checkConfigButton();
-static void triggerImmediateRefresh(bool nextMode = false, bool keepWiFi = false, bool partialVocabRating = false, const uint8_t *partialOldImage = nullptr, bool skipNtp = false);
+static void triggerImmediateRefresh(int modeStep = 0, bool keepWiFi = false, bool partialVocabRating = false, const uint8_t *partialOldImage = nullptr, bool skipNtp = false);
+static inline void triggerImmediateRefresh(bool nextMode, bool keepWiFi = false, bool partialVocabRating = false, const uint8_t *partialOldImage = nullptr, bool skipNtp = false) {
+    triggerImmediateRefresh(nextMode ? 1 : 0, keepWiFi, partialVocabRating, partialOldImage, skipNtp);
+}
 static void handleLiveMode();
 static bool temporaryOnlineActive(unsigned long now);
 static bool temporaryOnlineExpired(unsigned long now);
@@ -1005,7 +1021,7 @@ static const int AUTO_BOOT_VOICE_RECORD_SECONDS = 3;
 // ── Forward declarations ────────────────────────────────────
 static void checkConfigButton();
 static void checkAiChatButton();
-static void triggerImmediateRefresh(bool nextMode, bool keepWiFi, bool partialVocabRating, const uint8_t *partialOldImage, bool skipNtp);
+static void triggerImmediateRefresh(int modeStep, bool keepWiFi, bool partialVocabRating, const uint8_t *partialOldImage, bool skipNtp);
 static void handleLiveMode();
 static bool waitForContentReady();
 static void handleFailure(const char *reason);
@@ -1019,14 +1035,23 @@ static bool decodeVoiceBmpToFrameBuffer(const uint8_t *bmpBytes, size_t bmpLen);
 // ═════════════════════════════════════════════════════════════
 
 void setup() {
+#if defined(BOARD_PROFILE_XTEINK_X4)
+    x4PowerInit();
+    x4ButtonsInit();
+#endif
     ledInit();
     Serial.begin(115200);
+#if !defined(BOARD_PROFILE_XTEINK_X4)
     delay(3000);
-#if defined(BOARD_PROFILE_ESP32_C3_WROOM02) || defined(BOARD_PROFILE_SMT_WROOM32E) || defined(BOARD_PROFILE_YD_ESP32_S3_N16R8)
+#else
+    delay(1000);
+#endif
+#if defined(BOARD_PROFILE_ESP32_C3_WROOM02) || defined(BOARD_PROFILE_SMT_WROOM32E) || defined(BOARD_PROFILE_YD_ESP32_S3_N16R8) || defined(BOARD_PROFILE_XTEINK_X4)
     analogReadResolution(12);
     analogSetAttenuation(ADC_11db);
 #endif
     Serial.println("\n=== InkSight ===");
+    logMemoryDiagnostics("BOOT");
 
     gpioInit();
     ctx.wakeupReason = detectWakeupReason();
@@ -1041,10 +1066,22 @@ void setup() {
     loadConfig();
 
     bool forcePortal = false;
+#if defined(BOARD_PROFILE_XTEINK_X4)
+    int bootA1 = analogRead(PIN_BTN_ADC1);
+    if (bootA1 >= 3200 && bootA1 <= 3750) {
+        delay(400);
+        bootA1 = analogRead(PIN_BTN_ADC1);
+        if (bootA1 >= 3200 && bootA1 <= 3750) {
+            forcePortal = true;
+            Serial.println("[BOOT] Back button held -> force portal");
+        }
+    }
+#else
     if (digitalRead(PIN_CFG_BTN) == LOW) {
         delay(400);
         forcePortal = (digitalRead(PIN_CFG_BTN) == LOW);
     }
+#endif
 
     bool hasConfig = (cfgSSID.length() > 0);
 
@@ -1191,7 +1228,13 @@ void setup() {
 
     ctx.state = DeviceState::DISPLAYING;
     ctx.setupDoneAt = millis();
-    if (!ctx.liveMode) {
+#if defined(BOARD_PROFILE_XTEINK_X4)
+    // On X4, keep the device awake in loop() for an interactive window (3 minutes)
+    // so user can press buttons. Inactivity timeout in loop() will enter deep sleep.
+    extendTemporaryOnlineWindow("X4 boot interactive");
+    Serial.println("[X4] Device awake and listening for buttons (3 min idle window)");
+#else
+    if (!ctx.liveMode && !temporaryOnlineActive()) {
 #if DEBUG_MODE
         Serial.printf("[DEBUG] Boot complete, entering deep sleep for %d min\n", DEBUG_REFRESH_MIN);
 #else
@@ -1199,6 +1242,7 @@ void setup() {
 #endif
         enterDeepSleep(effectiveSleepMinutes());
     }
+#endif
 #if DEBUG_MODE
     Serial.printf("[DEBUG] Staying awake, refresh every %d min (user config: %d min)\n",
                   DEBUG_REFRESH_MIN, cfgSleepMin);
@@ -1212,22 +1256,103 @@ void setup() {
 #endif
 }
 
+#if defined(BOARD_PROFILE_XTEINK_X4)
+static unsigned long s_lastX4ActivityTime = 0;
+static constexpr unsigned long X4_IDLE_SLEEP_TIMEOUT_MS = 180000UL; // 3 minutes
+
+static void checkX4Buttons() {
+    x4ButtonsUpdate();
+    if (x4ButtonsIsAnyPressed()) {
+        s_lastX4ActivityTime = millis();
+    }
+    X4ButtonAction act = x4ButtonsGetAction();
+    if (act == X4ButtonAction::NONE) {
+        // Inactivity deep sleep check
+        if (!alwaysActive && !ctx.liveMode && ctx.state == DeviceState::DISPLAYING) {
+            if (s_lastX4ActivityTime == 0) s_lastX4ActivityTime = millis();
+            if (millis() - s_lastX4ActivityTime >= X4_IDLE_SLEEP_TIMEOUT_MS) {
+                Serial.printf("[X4] Inactive for %lu s -> Entering deep sleep\n", X4_IDLE_SLEEP_TIMEOUT_MS / 1000UL);
+                s_lastX4ActivityTime = millis();
+                enterDeepSleep(effectiveSleepMinutes());
+            }
+        }
+        return;
+    }
+
+    s_lastX4ActivityTime = millis();
+
+    if (ctx.state == DeviceState::PORTAL) {
+        if (act == X4ButtonAction::POWER_SHUTDOWN) {
+            x4PowerShutdown();
+        } else if (act == X4ButtonAction::POWER_SLEEP) {
+            enterDeepSleep(0, true);
+        } else if (act == X4ButtonAction::BACK_CLICK || act == X4ButtonAction::ENTER_PORTAL) {
+            Serial.println("[X4] Back button in portal -> restarting device");
+            ESP.restart();
+        }
+        return;
+    }
+
+    switch (act) {
+        case X4ButtonAction::NEXT_MODE:
+        case X4ButtonAction::UP_CLICK:
+            Serial.println("[X4] Button -> Next mode");
+            triggerImmediateRefresh(1, true);
+            ctx.setupDoneAt = millis();
+            break;
+        case X4ButtonAction::PREV_MODE:
+        case X4ButtonAction::DOWN_CLICK:
+            Serial.println("[X4] Button -> Previous mode");
+            triggerImmediateRefresh(-1, true);
+            ctx.setupDoneAt = millis();
+            break;
+        case X4ButtonAction::REFRESH:
+        case X4ButtonAction::BACK_CLICK:
+            Serial.println("[X4] Button -> Manual refresh");
+            triggerImmediateRefresh(0, true);
+            ctx.setupDoneAt = millis();
+            break;
+        case X4ButtonAction::ENTER_PORTAL:
+            Serial.println("[X4] Back long press -> Entering Captive Portal");
+            enterPortalMode(PortalEntryReason::MANUAL);
+            break;
+        case X4ButtonAction::POWER_SLEEP:
+            Serial.println("[X4] Power click -> Deep sleep");
+            enterDeepSleep(effectiveSleepMinutes(), true);
+            break;
+        case X4ButtonAction::POWER_SHUTDOWN:
+            Serial.println("[X4] Power long press -> Shutdown");
+            x4PowerShutdown();
+            break;
+        default:
+            break;
+    }
+}
+#endif
+
 // ═════════════════════════════════════════════════════════════
 // loop() — display build
 // ═════════════════════════════════════════════════════════════
 
 void loop() {
+#if defined(BOARD_PROFILE_XTEINK_X4)
+    checkX4Buttons();
+#endif
     if (ctx.state == DeviceState::PORTAL) {
         handlePortalClients();
         checkPortalTimeout();
+#if !defined(BOARD_PROFILE_XTEINK_X4)
         checkConfigButton();
         checkAiChatButton();
+#endif
         delay(5);
         return;
     }
 
+#if !defined(BOARD_PROFILE_XTEINK_X4)
     checkConfigButton();
     checkAiChatButton();
+#endif
 
 #if VOCAB_REVIEW_BUILD
     if (ctx.wantEnterVocabReview || ctx.wantVocabFlip || ctx.wantVocabNextRating || ctx.wantVocabSubmitRating || ctx.wantVocabExit) {
@@ -1497,14 +1622,24 @@ static void enterDeepSleep(int minutes, bool force) {
                        : "[LIVE] Always active enabled, skipping deep sleep");
         return;
     }
+#if defined(BOARD_PROFILE_XTEINK_X4)
+    logMemoryDiagnostics("PRE-SLEEP");
+    x4PowerDeepSleep(minutes);
+    return;
+#endif
     ctx.state = DeviceState::SLEEPING;
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     epdSleep();
     ledFeedback("off");
-    Serial.printf("Deep sleep for %d min (~%duA)\n", minutes, 5);
-    Serial.flush();
-    esp_sleep_enable_timer_wakeup((uint64_t)minutes * 60ULL * 1000000ULL);
+    if (minutes > 0) {
+        Serial.printf("Deep sleep for %d min (~%duA)\n", minutes, 5);
+        Serial.flush();
+        esp_sleep_enable_timer_wakeup((uint64_t)minutes * 60ULL * 1000000ULL);
+    } else {
+        Serial.println("Deep sleep indefinitely until button wake (~5uA)");
+        Serial.flush();
+    }
 #if PIN_CFG_BTN >= 0
     pinMode(PIN_CFG_BTN, INPUT_PULLUP);
     unsigned long releaseStartedAt = millis();
@@ -1543,13 +1678,19 @@ static void checkPortalTimeout() {
         return;
     }
     unsigned long now = millis();
-    if (now - ctx.portalStartedAt < ctx.portalTimeoutMs) {
+    unsigned long lastAct = portalGetLastActivity();
+    unsigned long baseTime = (lastAct > ctx.portalStartedAt) ? lastAct : ctx.portalStartedAt;
+    if (now - baseTime < ctx.portalTimeoutMs) {
         return;
     }
-    Serial.printf("[PORTAL] Timeout %lus, entering deep sleep\n", ctx.portalTimeoutMs / 1000UL);
+    Serial.printf("[PORTAL] Inactivity timeout %lus, entering deep sleep\n", ctx.portalTimeoutMs / 1000UL);
     ctx.portalStartedAt = 0;
     ctx.portalTimeoutMs = 0;
-    enterDeepSleep(effectiveSleepMinutes(), true);
+    if (cacheLoad(imgBuf, IMG_BUF_LEN)) {
+        smartDisplay(imgBuf);
+    }
+    // Enter deep sleep indefinitely (minutes = 0) so device does not repeatedly reboot in a sleep loop
+    enterDeepSleep(0, true);
 }
 
 // ── Failure handler ─────────────────────────────────────────
@@ -1569,7 +1710,7 @@ static void handleFailure(const char *reason) {
 
     if (cacheLoad(imgBuf, IMG_BUF_LEN)) {
         Serial.println("Showing cached content (offline mode)");
-        const int offlineScale = 2;
+        const int offlineScale = (W >= 600) ? 3 : 2;
         const int offlineLen = 7;
         const int offlineWidth = offlineLen * (5 * offlineScale + offlineScale) - offlineScale;
         const int offlineX = W - offlineWidth - 4;
@@ -1621,7 +1762,17 @@ static void handleWiFiFailure() {
         }
         if (g_userAborted) break;
     }
-    Serial.println("[DIAG] WiFi still unreachable -> captive portal");
+    Serial.println("[DIAG] WiFi still unreachable");
+
+    // If device woke from timer (background periodic refresh) and has cached content,
+    // do not disrupt the user with a setup screen and AP; fall back to offline mode.
+    if (ctx.wakeupReason == WakeupReason::TIMER && cacheLoad(imgBuf, IMG_BUF_LEN)) {
+        Serial.println("[DIAG] Timer wakeup with cached image -> offline display mode");
+        handleFailure("WiFi unreachable");
+        return;
+    }
+
+    Serial.println("[DIAG] Entering captive portal for user setup");
     resetRetryCount();
     enterPortalMode(PortalEntryReason::AUTO_WIFI_FAILURE);
 }
@@ -2063,23 +2214,21 @@ static bool runAiChatConversation() {
 #endif
 }
 
-// ── Immediate refresh ───────────────────────────────────────
-
-static void triggerImmediateRefresh(bool nextMode, bool keepWiFi, bool partialVocabRating, const uint8_t *partialOldImage, bool skipNtp) {
-    Serial.println("[REFRESH] Triggering immediate refresh...");
+static void triggerImmediateRefresh(int modeStep, bool keepWiFi, bool partialVocabRating, const uint8_t *partialOldImage, bool skipNtp) {
+    Serial.printf("[REFRESH] Triggering immediate refresh (modeStep=%d)...\n", modeStep);
     ledFeedback("ack");
     uint8_t *previousImage = nullptr;
-    if (nextMode) {
+    if (modeStep != 0) {
         previousImage = (uint8_t *)malloc(IMG_BUF_LEN);
         if (previousImage) {
             memcpy(previousImage, imgBuf, IMG_BUF_LEN);
         }
-        showModePreview("NEXT");
+        showModePreview(modeStep > 0 ? "NEXT" : "PREV");
     }
     auto restorePreviousImage = [&]() {
-        if (nextMode && previousImage) {
+        if (modeStep != 0 && previousImage) {
             memcpy(imgBuf, previousImage, IMG_BUF_LEN);
-            Serial.println("[REFRESH] Restoring previous image after failed next-mode refresh");
+            Serial.println("[REFRESH] Restoring previous image after failed refresh");
             smartDisplay(imgBuf);
         }
     };
@@ -2091,7 +2240,7 @@ static void triggerImmediateRefresh(bool nextMode, bool keepWiFi, bool partialVo
     if (connected) {
         ledFeedback("downloading");
         String renderedModeId;
-        bool fetched = fetchBMP(nextMode, nullptr, &renderedModeId);
+        bool fetched = fetchBMP(modeStep, nullptr, &renderedModeId);
         if (fetched && renderedModeId.length() > 0) {
             ctx.currentRenderedModeId = renderedModeId;
             if (!ctx.currentRenderedModeId.equalsIgnoreCase(VOCAB_REVIEW_MODE_ID)) {
@@ -2124,7 +2273,7 @@ static void triggerImmediateRefresh(bool nextMode, bool keepWiFi, bool partialVo
             if (!skipNtp) {
                 syncNTP();
             }
-            if (newChecksum == lastContentChecksum && !nextMode) {
+            if (newChecksum == lastContentChecksum && modeStep == 0) {
                 Serial.println("Content unchanged, skipping display refresh");
                 ledFeedback("success");
             } else {
@@ -2178,7 +2327,7 @@ static void triggerImmediateRefresh(bool nextMode, bool keepWiFi, bool partialVo
                 retryReady = connectWiFi();
             }
             if (retryReady) {
-                fetched = fetchBMP(nextMode, nullptr, &renderedModeId);
+                fetched = fetchBMP(modeStep, nullptr, &renderedModeId);
                 if (fetched) {
                     if (renderedModeId.length() > 0) {
                         ctx.currentRenderedModeId = renderedModeId;

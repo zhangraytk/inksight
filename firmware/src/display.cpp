@@ -150,6 +150,42 @@ static void fillRect(int x, int y, int w, int h) {
     }
 }
 
+static void fillRectWhite(int x, int y, int w, int h) {
+    int rowBytes = W / 8;
+    for (int py = y; py < y + h; py++) {
+        if (py < 0 || py >= H) continue;
+        for (int px = x; px < x + w; px++) {
+            if (px < 0 || px >= W) continue;
+            imgBuf[py * rowBytes + px / 8] |= (0x80 >> (px % 8));
+        }
+    }
+}
+
+static void drawTextWhite(const char *msg, int x, int y, int scale) {
+    int rowBytes = W / 8;
+    int len = strlen(msg);
+
+    for (int ci = 0; ci < len; ci++) {
+        const uint8_t *glyph = getGlyph(msg[ci]);
+        int cx = x + ci * (5 * scale + scale);
+        for (int col = 0; col < 5; col++) {
+            for (int row = 0; row < 7; row++) {
+                if (glyph[col] & (1 << row)) {
+                    for (int dy = 0; dy < scale; dy++) {
+                        for (int dx = 0; dx < scale; dx++) {
+                            int px = cx + col * scale + dx;
+                            int py = y + row * scale + dy;
+                            if (px >= 0 && px < W && py >= 0 && py < H)
+                                imgBuf[py * rowBytes + px / 8] |= (0x80 >> (px % 8));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 // ── Show WiFi setup screen ──────────────────────────────────
 
 void showSetupScreen(const char *apName) {
@@ -160,18 +196,18 @@ void showSetupScreen(const char *apName) {
     fillRect(W * 8 / 100, H * 72 / 100, W * 84 / 100, H * 2 / 100);
 
     const char *title = "SETUP WIFI";
-    int titleScale = (H < 200) ? 2 : 4;
+    int titleScale = (W >= 600) ? 5 : ((H < 200) ? 2 : 4);
     int titleX = (W - textWidth(strlen(title), titleScale)) / 2;
     int titleY = H * 15 / 100;
     drawText(title, titleX, titleY, titleScale);
 
     const char *line1 = "CONNECT TO";
-    int bodyScale = (H < 200) ? 1 : 2;
+    int bodyScale = (W >= 600) ? 3 : ((H < 200) ? 1 : 2);
     int line1X = (W - textWidth(strlen(line1), bodyScale)) / 2;
     int line1Y = H * 36 / 100;
     drawText(line1, line1X, line1Y, bodyScale);
 
-    int apScale = (H < 200) ? 2 : 3;
+    int apScale = (W >= 600) ? 4 : ((H < 200) ? 2 : 3);
     int apX = (W - textWidth(strlen(apName), apScale)) / 2;
     int apY = H * 46 / 100;
     drawText(apName, apX, apY, apScale);
@@ -190,8 +226,8 @@ void showSetupScreen(const char *apName) {
 void showDiagnostic(const char *line1, const char *line2, const char *line3, const char *line4) {
     memset(imgBuf, 0xFF, IMG_BUF_LEN);
 
-    int titleScale = (H < 200) ? 2 : 3;
-    int bodyScale  = (H < 200) ? 1 : 2;
+    int titleScale = (W >= 600) ? 4 : ((H < 200) ? 2 : 3);
+    int bodyScale  = (W >= 600) ? 3 : ((H < 200) ? 1 : 2);
 
     int y = H * 10 / 100;
     int lh = 7 * titleScale + titleScale * 2;
@@ -319,8 +355,8 @@ static int computeMaxWrappedLines(int startY, int endY, int scale) {
 void showAiChatStatus(const char *state, const char *detail) {
     memset(imgBuf, 0xFF, IMG_BUF_LEN);
 
-    int titleScale = (H < 200) ? 2 : 4;
-    int bodyScale = (H < 200) ? 1 : 2;
+    int titleScale = (W >= 600) ? 5 : ((H < 200) ? 2 : 4);
+    int bodyScale = (W >= 600) ? 3 : ((H < 200) ? 1 : 2);
     int marginX = W * 7 / 100;
     int contentWidth = W - marginX * 2;
     if (contentWidth < 40) contentWidth = W - 8;
@@ -499,7 +535,7 @@ void showVoiceChatScreen() {
 void showError(const char *msg) {
     memset(imgBuf, 0xFF, IMG_BUF_LEN);
 
-    int scale = (H < 200) ? 1 : 2;
+    int scale = (W >= 600) ? 3 : ((H < 200) ? 1 : 2);
     int len = strlen(msg);
     int startX = (W - textWidth(len, scale)) / 2;
     int startY = H / 2 - (7 * scale) / 2;
@@ -694,18 +730,18 @@ void updateVocabRatingRegion(const uint8_t *oldImage) {
 void showModePreview(const char *modeName) {
     memset(imgBuf, 0xFF, IMG_BUF_LEN);
 
-    int nameScale = (H < 200) ? 2 : 3;
-    int loadScale = (H < 200) ? 1 : 2;
+    int nameScale = (W >= 600) ? 5 : ((H < 200) ? 2 : 3);
+    int loadScale = (W >= 600) ? 3 : ((H < 200) ? 1 : 2);
 
     int len = strlen(modeName);
     int nameX = (W - textWidth(len, nameScale)) / 2;
-    int nameY = H / 2 - (H < 200 ? 15 : 30);
+    int nameY = H / 2 - (H >= 400 ? 50 : (H < 200 ? 15 : 30));
     drawText(modeName, nameX, nameY, nameScale);
 
     const char *loading = "loading...";
     int loadLen = strlen(loading);
     int loadX = (W - textWidth(loadLen, loadScale)) / 2;
-    int loadY = H / 2 + (H < 200 ? 10 : 20);
+    int loadY = H / 2 + (H >= 400 ? 30 : (H < 200 ? 10 : 20));
     drawText(loading, loadX, loadY, loadScale);
 
     epdDisplayFast(imgBuf);
@@ -741,3 +777,66 @@ void smartDisplay(const uint8_t *image) {
     }
     refreshCount++;
 }
+
+void showSleepBadge(int nextRefreshMin) {
+    int scale = (W >= 600) ? 2 : 1;
+    char text[24];
+    if (nextRefreshMin > 0) {
+        snprintf(text, sizeof(text), "SLEEP %dm", nextRefreshMin);
+    } else {
+        snprintf(text, sizeof(text), "SLEEP");
+    }
+
+    int tWidth = textWidth(strlen(text), scale);
+    int tHeight = 7 * scale;
+    int padX = 6 * scale;
+    int padY = 4 * scale;
+    int badgeW = tWidth + padX * 2;
+    int badgeH = tHeight + padY * 2;
+    int badgeX = W - badgeW - (8 * scale);
+    int badgeY = H - badgeH - (8 * scale);
+
+    // 1. Draw outer black container
+    fillRect(badgeX, badgeY, badgeW, badgeH);
+    // 2. Draw white text inside
+    drawTextWhite(text, badgeX + padX, badgeY + padY, scale);
+
+    // Fast-refresh badge region/screen onto EPD
+    epdDisplayFast(imgBuf);
+    Serial.printf("[DISPLAY] Sleep badge rendered: %s at (%d, %d)\n", text, badgeX, badgeY);
+}
+
+void showShutdownScreen() {
+    memset(imgBuf, 0xFF, IMG_BUF_LEN);
+
+    int cardW = (W >= 600) ? 520 : (W * 85 / 100);
+    int cardH = (H >= 400) ? 220 : (H * 60 / 100);
+    int cardX = (W - cardW) / 2;
+    int cardY = (H - cardH) / 2;
+
+    // Double frame
+    fillRect(cardX, cardY, cardW, cardH);
+    fillRectWhite(cardX + 4, cardY + 4, cardW - 8, cardH - 8);
+
+    const char *title = "InkSight";
+    int titleScale = (W >= 600) ? 4 : 3;
+    int titleX = (W - textWidth(strlen(title), titleScale)) / 2;
+    int titleY = cardY + 24;
+    drawText(title, titleX, titleY, titleScale);
+
+    const char *status = "POWERED OFF";
+    int statusScale = (W >= 600) ? 3 : 2;
+    int statusX = (W - textWidth(strlen(status), statusScale)) / 2;
+    int statusY = titleY + 7 * titleScale + 18;
+    drawText(status, statusX, statusY, statusScale);
+
+    const char *hint = "HOLD POWER TO TURN ON";
+    int hintScale = (W >= 600) ? 2 : 1;
+    int hintX = (W - textWidth(strlen(hint), hintScale)) / 2;
+    int hintY = statusY + 7 * statusScale + 22;
+    drawText(hint, hintX, hintY, hintScale);
+
+    epdDisplay(imgBuf);
+    Serial.println("[DISPLAY] Full shutdown screen rendered");
+}
+

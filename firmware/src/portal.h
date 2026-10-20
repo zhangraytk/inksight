@@ -13,4 +13,8 @@ void startCaptivePortal();
 // Process pending portal HTTP/DNS requests (call in loop)
 void handlePortalClients();
 
+// Refresh and query portal client activity timestamp
+void portalNotifyActivity();
+unsigned long portalGetLastActivity();
+
 #endif // INKSIGHT_PORTAL_H

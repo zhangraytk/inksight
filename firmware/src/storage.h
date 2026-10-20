@@ -11,6 +11,7 @@ extern int    cfgSleepMin;
 extern String cfgConfigJson;
 extern String cfgDeviceToken;
 extern String cfgPendingPairCode;
+extern bool   cfgInsecureTls;
 
 // ── NVS operations ──────────────────────────────────────────
 
@@ -19,6 +20,7 @@ void loadConfig();
 
 // Save WiFi credentials to NVS
 void saveWiFiConfig(const String &ssid, const String &pass);
+void saveInsecureTls(bool insec);
 
 // ── Multi-WiFi credential list (up to MAX_WIFI_NETWORKS) ────
 // Networks are tried in index order (0 first) on boot.

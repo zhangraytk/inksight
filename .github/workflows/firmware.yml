@@ -1,0 +1,131 @@
+name: Firmware
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Firmware (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - xteink_x4
+          - epd_42_wsv2_ssd1683_c3_promini
+          - epd_29_c3_promini
+          - epd_75_c3_promini
+    env:
+      PIO_ENV: ${{ matrix.env }}
+    defaults:
+      run:
+        working-directory: firmware
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: ${{ runner.os }}-pio-${{ matrix.env }}-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-${{ matrix.env }}-
+
+      - name: Install PlatformIO
+        run: python -m pip install platformio
+
+      - name: Test network security policy
+        if: matrix.env == 'xteink_x4'
+        run: python -m unittest discover -s firmware/tests -p 'test_network_security.py' -v
+        working-directory: .
+
+      - name: Build firmware
+        run: |
+          set -o pipefail
+          pio run -e "$PIO_ENV" | tee "$RUNNER_TEMP/firmware-build.log"
+
+      - name: Package firmware and checksums
+        run: |
+          python - <<'PY'
+          import hashlib
+          import importlib.metadata
+          import os
+          import re
+          import shutil
+          from pathlib import Path
+
+          environment = os.environ["PIO_ENV"]
+          build_dir = Path(".pio/build") / environment
+          output = Path("artifacts") / environment
+          output.mkdir(parents=True, exist_ok=True)
+          log = (Path(os.environ["RUNNER_TEMP"]) / "firmware-build.log").read_text()
+          # Read addresses and optional boot_app0 from the same inputs used to merge.
+          sections = log.split("=== FLASH_EXTRA_IMAGES ===")
+          if len(sections) != 2:
+              raise SystemExit("Expected one merge_firmware.py image list")
+          image_list = sections[1].split("==========================", 1)[0]
+          segments = []
+          for line in image_list.splitlines():
+              extra = re.fullmatch(r"\s*(0x[0-9a-fA-F]+|\d+) -> (.+?)\s*", line)
+              app = re.fullmatch(r"\s*APP -> (0x[0-9a-fA-F]+|\d+) (.+?)\s*", line)
+              match = extra or app
+              if match:
+                  address, source = match.groups()
+                  source = Path(source)
+                  if source.name not in {"firmware.bin", "bootloader.bin", "partitions.bin", "boot_app0.bin"}:
+                      raise SystemExit(f"Unexpected flash image: {source.name}")
+                  shutil.copy2(source, output / source.name)
+                  segments.append({"file": source.name, "flash_address": address})
+          required = {"firmware.bin", "bootloader.bin", "partitions.bin"}
+          if not required.issubset({segment["file"] for segment in segments}):
+              raise SystemExit("Build log did not describe all required flash images")
+          shutil.copy2(build_dir / "firmware_merged.bin", output / "firmware_merged.bin")
+          (output / "BUILD_INFO.txt").write_text(
+              f"Environment: {environment}\n"
+              f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
+              f"Commit: {os.environ['GITHUB_SHA']}\n"
+              f"Ref: {os.environ['GITHUB_REF']}\n"
+              f"PlatformIO: {importlib.metadata.version('platformio')}\n\n"
+              "firmware.bin: application only; suitable for the project's OTA flow.\n"
+              "firmware_merged.bin: bootloader, partition table and application merged by merge_firmware.py.\n"
+              "Board/chip/flash configuration: firmware/platformio.ini at the commit above.\n"
+              "These are CI build outputs, not a full device or NVS backup.\n\n"
+              "Segment addresses (merge_firmware.py FLASH_EXTRA_IMAGES and APP build-log entries):\n"
+              + "".join(f"{segment['flash_address']}  {segment['file']}\n" for segment in segments)
+          )
+          sums = []
+          for path in sorted(output.iterdir()):
+              sums.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n")
+          (output / "SHA256SUMS").write_text("".join(sums))
+          PY
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.env }}
+          path: firmware/artifacts/${{ matrix.env }}/
+          if-no-files-found: error
+          retention-days: 30

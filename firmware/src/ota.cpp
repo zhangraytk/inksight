@@ -1,5 +1,5 @@
 #include "ota.h"
-#include "network.h"
+#include "inksight_net.h"
 #include "display.h"
 #include "config.h"
 #include "storage.h"

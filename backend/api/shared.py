@@ -291,6 +291,20 @@ async def advance_to_next_mode(mac: Optional[str], config: dict) -> str:
     return persona
 
 
+async def retreat_to_prev_mode(mac: Optional[str], config: dict) -> str:
+    modes = config.get("modes", DEFAULT_MODES)
+    if not modes:
+        return "STOIC"
+
+    state = await get_device_state(mac) if mac else None
+    current = state.get("last_persona", "") if state else ""
+    idx = (modes.index(current) - 1) % len(modes) if current in modes else (len(modes) - 1)
+    persona = modes[idx]
+    if mac:
+        await set_cycle_index(mac, idx + 1)
+    return persona
+
+
 async def consume_pending_mode(mac: str) -> Optional[str]:
     try:
         state = await get_device_state(mac)
@@ -309,6 +323,7 @@ async def resolve_mode(
     persona_override: Optional[str],
     *,
     force_next: bool = False,
+    force_prev: bool = False,
 ) -> str:
     from core.mode_registry import get_registry
 
@@ -325,6 +340,8 @@ async def resolve_mode(
     if config:
         if force_next:
             return await advance_to_next_mode(mac, config)
+        if force_prev:
+            return await retreat_to_prev_mode(mac, config)
         return await choose_persona_from_config(config)
 
     return random.choice(["STOIC", "ROAST", "ZEN", "DAILY"])
@@ -338,6 +355,7 @@ async def build_image(
     screen_w: int,
     screen_h: int,
     force_next: bool = False,
+    force_prev: bool = False,
     skip_cache: bool = False,
     preview_city_override: Optional[str] = None,
     preview_mode_override: Optional[dict] = None,
@@ -353,7 +371,7 @@ async def build_image(
 
     battery_pct = calc_battery_pct(v)
     config = await get_active_config(mac) if mac else None
-    persona = await resolve_mode(mac, config, persona_override, force_next=force_next)
+    persona = await resolve_mode(mac, config, persona_override, force_next=force_next, force_prev=force_prev)
     owner_user_id: Optional[int] = None
     if mac:
         from core.config_store import get_device_owner

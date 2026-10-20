@@ -74,6 +74,27 @@
 #define PIN_LED        -1
 #define PIN_RGB_LED    48
 #define PIN_AI_CHAT_SW -1
+#elif defined(BOARD_PROFILE_XTEINK_X4)
+#define PIN_EPD_MOSI   10
+#define PIN_EPD_SCK    8
+#define PIN_EPD_CS     21
+#define PIN_EPD_DC     4
+#define PIN_EPD_RST    5
+#define PIN_EPD_BUSY   6
+#define PIN_BAT_ADC    0
+#define PIN_CFG_BTN    3
+#define PIN_PWR_LATCH  13
+#define PIN_USB_DETECT 20
+#define PIN_BTN_ADC1   1
+#define PIN_BTN_ADC2   2
+#define PIN_SD_CS      12
+#define PIN_SD_MISO    7
+#define PIN_LED        -1
+#ifdef PIN_RGB_LED
+#undef PIN_RGB_LED
+#endif
+#define PIN_RGB_LED    -1
+#define PIN_AI_CHAT_SW -1
 #else
 #error "Unsupported board profile"
 #endif

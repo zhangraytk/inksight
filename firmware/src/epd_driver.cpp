@@ -780,6 +780,363 @@ void epdSleep() {
     EPD_Send_1(0x07, 0xA5); // deep sleep
 }
 
+#elif defined(EPD_PANEL_426_GDEQ0426T82)
+// ── XTEINK X4 (SSD1677 800x480) Hardware SPI Driver (adapted from Xtelink-screen) ──
+
+#include <SPI.h>
+
+static const SPISettings epdSpiSettings(20000000, MSBFIRST, SPI_MODE0);
+static bool _x4_isScreenOn = false;
+static bool _x4_needsInitialFull = true;
+static bool _x4_initialized = false;
+
+static inline void epdSendCommand(uint8_t cmd) {
+    SPI.beginTransaction(epdSpiSettings);
+    digitalWrite(PIN_EPD_DC, LOW);
+    digitalWrite(PIN_EPD_CS, LOW);
+    SPI.transfer(cmd);
+    digitalWrite(PIN_EPD_CS, HIGH);
+    SPI.endTransaction();
+}
+
+static inline void epdSendData(uint8_t data) {
+    SPI.beginTransaction(epdSpiSettings);
+    digitalWrite(PIN_EPD_DC, HIGH);
+    digitalWrite(PIN_EPD_CS, LOW);
+    SPI.transfer(data);
+    digitalWrite(PIN_EPD_CS, HIGH);
+    SPI.endTransaction();
+}
+
+static inline void epdSendDataBytes(const uint8_t *data, uint32_t len) {
+    if (!data || len == 0) return;
+    SPI.beginTransaction(epdSpiSettings);
+    digitalWrite(PIN_EPD_DC, HIGH);
+    digitalWrite(PIN_EPD_CS, LOW);
+    SPI.writeBytes(data, len);
+    digitalWrite(PIN_EPD_CS, HIGH);
+    SPI.endTransaction();
+}
+
+static void epdWaitBusy(unsigned long timeoutMs = 30000) {
+    unsigned long t0 = millis();
+    while (digitalRead(PIN_EPD_BUSY) == HIGH) {
+        delay(1);
+        if (millis() - t0 > timeoutMs) {
+            Serial.println("[EPD-X4] Busy TIMEOUT!");
+            return;
+        }
+    }
+}
+
+static void epdReset() {
+    digitalWrite(PIN_EPD_RST, HIGH);
+    delay(20);
+    digitalWrite(PIN_EPD_RST, LOW);
+    delay(2);
+    digitalWrite(PIN_EPD_RST, HIGH);
+    delay(20);
+}
+
+static void epdSetRamArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    uint16_t xLo = x;
+    uint16_t xHi = x + w - 1;
+    // Gates are physically reversed on this panel
+    uint16_t y_internal = H - y - h;
+
+    epdSendCommand(0x11);  // Data Entry Mode
+    epdSendData(0x01);     // X increment, Y decrement
+
+    epdSendCommand(0x44);  // Set RAM X Range
+    epdSendData(xLo % 256);
+    epdSendData(xLo / 256);
+    epdSendData(xHi % 256);
+    epdSendData(xHi / 256);
+
+    epdSendCommand(0x45);  // Set RAM Y Range
+    epdSendData((y_internal + h - 1) % 256);
+    epdSendData((y_internal + h - 1) / 256);
+    epdSendData(y_internal % 256);
+    epdSendData(y_internal / 256);
+
+    epdSendCommand(0x4E);  // Set RAM X Counter
+    epdSendData(xLo % 256);
+    epdSendData(xLo / 256);
+
+    epdSendCommand(0x4F);  // Set RAM Y Counter
+    epdSendData((y_internal + h - 1) % 256);
+    epdSendData((y_internal + h - 1) / 256);
+}
+
+void gpioInit() {
+#if PIN_CFG_BTN >= 0
+    pinMode(PIN_CFG_BTN, INPUT_PULLUP);
+#endif
+    pinMode(PIN_EPD_BUSY, INPUT);
+    pinMode(PIN_EPD_RST,  OUTPUT);
+    pinMode(PIN_EPD_DC,   OUTPUT);
+    pinMode(PIN_EPD_CS,   OUTPUT);
+    pinMode(PIN_EPD_SCK,  OUTPUT);
+    pinMode(PIN_EPD_MOSI, OUTPUT);
+
+    digitalWrite(PIN_EPD_RST, HIGH);
+    digitalWrite(PIN_EPD_CS,  HIGH);
+    digitalWrite(PIN_EPD_DC,  HIGH);
+    digitalWrite(PIN_EPD_SCK, LOW);
+
+    SPI.begin(PIN_EPD_SCK, -1, PIN_EPD_MOSI, PIN_EPD_CS);
+}
+
+void epdInit() {
+    if (_x4_initialized) return;
+
+    epdReset();
+
+    epdSendCommand(0x12);  // Soft reset
+    epdWaitBusy();
+
+    epdSendCommand(0x18);  // Temperature sensor control
+    epdSendData(0x80);     // Internal temperature sensor
+
+    epdSendCommand(0x0C);  // Booster soft start
+    epdSendData(0xAE);
+    epdSendData(0xC7);
+    epdSendData(0xC3);
+    epdSendData(0xC0);
+    epdSendData(0x80);
+
+    epdSendCommand(0x01);  // Driver output control
+    epdSendData((H - 1) % 256);  // 0xDF
+    epdSendData((H - 1) / 256);  // 0x01
+    epdSendData(0x02);           // SM=1 interlaced, TB=0
+
+    epdSendCommand(0x3C);  // Border waveform
+    epdSendData(0x80);     // Init border
+
+    epdSetRamArea(0, 0, W, H);
+
+    epdSendCommand(0x46);  // Auto write BW RAM
+    epdSendData(0xF7);
+    epdWaitBusy();
+
+    epdSendCommand(0x47);  // Auto write RED RAM
+    epdSendData(0xF7);
+    epdWaitBusy();
+
+    _x4_initialized = true;
+    _x4_isScreenOn = false;
+    _x4_needsInitialFull = true;
+}
+
+void epdInitFast() {
+    epdInit();
+}
+
+// Full / clean refresh: uses OEM stock single-pass warmed waveform (0xD7, ~1700ms)
+void epdDisplay(const uint8_t *image) {
+    if (!_x4_initialized) epdInit();
+
+    const uint32_t bufSize = (uint32_t)(W / 8) * H;
+
+    epdSetRamArea(0, 0, W, H);
+
+    // Write BW RAM (0x24)
+    epdSendCommand(0x24);
+    epdSendDataBytes(image, bufSize);
+
+    // Write RED RAM (0x26)
+    epdSendCommand(0x26);
+    epdSendDataBytes(image, bufSize);
+
+    // HALF / Warmed Clean Refresh (Stock X4 OEM parity: 0xD7 with temp 0x5A)
+    epdSendCommand(0x21);  // Display update control 1
+    epdSendData(0x40);     // Bypass RED
+
+    epdSendCommand(0x3C);  // Border waveform
+    epdSendData(0xC0);
+
+    epdSendCommand(0x1A);  // Write temperature register
+    epdSendData(0x5A);
+
+    epdSendCommand(0x22);  // Display update control 2
+    epdSendData(0xD7);     // Warmed clean update sequence
+
+    epdSendCommand(0x20);  // Master activation
+    epdWaitBusy();
+
+    _x4_isScreenOn = true;
+    _x4_needsInitialFull = false;
+}
+
+// Deep clear: OTP full waveform (0xF7, multi-inversion clean, ~1800ms)
+void epdDisplayDeepClear(const uint8_t *image) {
+    if (!_x4_initialized) epdInit();
+
+    const uint32_t bufSize = (uint32_t)(W / 8) * H;
+
+    epdSetRamArea(0, 0, W, H);
+
+    epdSendCommand(0x24);
+    epdSendDataBytes(image, bufSize);
+
+    epdSendCommand(0x26);
+    epdSendDataBytes(image, bufSize);
+
+    // Full OTP update sequence
+    epdSendCommand(0x21);  // Display update control 1
+    epdSendData(0x40);     // Bypass RED
+
+    epdSendCommand(0x3C);  // Border waveform
+    epdSendData(0xC0);
+
+    epdSendCommand(0x22);  // Display update control 2
+    epdSendData(0xF7);     // OTP full waveform
+
+    epdSendCommand(0x20);  // Master activation
+    epdWaitBusy();
+
+    _x4_isScreenOn = true;
+    _x4_needsInitialFull = false;
+}
+
+void epdDisplay2bpp(const uint8_t *image2bpp) {
+    (void)image2bpp;
+    epdDisplay(imgBuf);
+}
+
+// Fast partial/differential refresh (0xFC, ~500ms)
+void epdDisplayFast(const uint8_t *image) {
+    if (!_x4_initialized) epdInit();
+
+    // If first paint after boot or deep sleep, promote to clean refresh
+    if (_x4_needsInitialFull) {
+        epdDisplay(image);
+        return;
+    }
+
+    const uint32_t bufSize = (uint32_t)(W / 8) * H;
+
+    // Set RAM area to full screen
+    epdSetRamArea(0, 0, W, H);
+
+    // In single-buffer mode, RED RAM (0x26) already holds the baseline from the last refresh!
+    // Write new frame to BW RAM (0x24) only:
+    epdSendCommand(0x24);
+    epdSendDataBytes(image, bufSize);
+
+    // Fast partial/differential update sequence
+    epdSendCommand(0x21);  // Display update control 1
+    epdSendData(0x00);     // Normal (diff BW against RED)
+
+    epdSendCommand(0x3C);  // Border waveform
+    epdSendData(0xC0);
+
+    epdSendCommand(0x22);  // Display update control 2
+    epdSendData(0xFC);     // Partial / fast update sequence
+
+    epdSendCommand(0x20);  // Master activation
+    epdWaitBusy();
+
+    _x4_isScreenOn = true;
+
+    // After refresh finishes: re-sync RED (0x26) and BW (0x24) to image
+    // to establish the baseline for the NEXT fast refresh!
+    epdSetRamArea(0, 0, W, H);
+    epdSendCommand(0x24);
+    epdSendDataBytes(image, bufSize);
+    epdSendCommand(0x26);
+    epdSendDataBytes(image, bufSize);
+}
+
+bool epdSupportsPartialRefresh() {
+    return true;
+}
+
+void epdPartialDisplay(uint8_t *data, int xStart, int yStart, int xEnd, int yEnd) {
+    epdPartialDisplayWithOld(data, nullptr, xStart, yStart, xEnd, yEnd);
+}
+
+void epdPartialDisplayWithOld(uint8_t *data, const uint8_t *oldData, int xStart, int yStart, int xEnd, int yEnd) {
+    if (!_x4_initialized) epdInit();
+
+    if (_x4_needsInitialFull) {
+        epdDisplay(imgBuf);
+        return;
+    }
+
+    if (xStart < 0) xStart = 0;
+    if (yStart < 0) yStart = 0;
+    if (xEnd > W) xEnd = W;
+    if (yEnd > H) yEnd = H;
+    if (xEnd <= xStart || yEnd <= yStart) return;
+
+    // Byte align X
+    xStart -= (xStart % 8);
+    int w = xEnd - xStart;
+    if (w % 8 != 0) w += (8 - (w % 8));
+    if (xStart + w > W) w = W - xStart;
+    int h = yEnd - yStart;
+
+    const uint16_t wBytes = w / 8;
+    const uint32_t windowSize = (uint32_t)wBytes * h;
+
+    epdSetRamArea(xStart, yStart, w, h);
+
+    // Write new window to BW RAM (0x24)
+    epdSendCommand(0x24);
+    epdSendDataBytes(data, windowSize);
+
+    // If oldData is provided, write it to RED RAM (0x26) for diffing
+    if (oldData != nullptr) {
+        epdSendCommand(0x26);
+        epdSendDataBytes(oldData, windowSize);
+    }
+
+    // Fast partial update sequence
+    epdSendCommand(0x21);
+    epdSendData(0x00);
+
+    epdSendCommand(0x3C);
+    epdSendData(0xC0);
+
+    epdSendCommand(0x22);
+    epdSendData(0xFC);
+
+    epdSendCommand(0x20);
+    epdWaitBusy();
+
+    _x4_isScreenOn = true;
+
+    // If oldData was not provided, re-sync that window in RED (0x26) and BW (0x24)
+    if (oldData == nullptr) {
+        epdSetRamArea(xStart, yStart, w, h);
+        epdSendCommand(0x24);
+        epdSendDataBytes(data, windowSize);
+        epdSendCommand(0x26);
+        epdSendDataBytes(data, windowSize);
+    }
+}
+
+void epdSleep() {
+    if (_x4_isScreenOn) {
+        epdSendCommand(0x3C);
+        epdSendData(0x80);
+
+        epdSendCommand(0x22);
+        epdSendData(0x03);  // ANALOG_OFF_PHASE | CLOCK_OFF
+        epdSendCommand(0x20);
+        epdWaitBusy();
+        _x4_isScreenOn = false;
+    }
+
+    // Deep sleep mode 2 (discards RAM, stock X4 parity)
+    epdSendCommand(0x10);
+    epdSendData(0x03);
+
+    _x4_initialized = false;
+    _x4_needsInitialFull = true;
+}
+
 #else
 // ── Other panel sizes: GxEPD2 (hardware SPI) ─────────────────
 
@@ -861,7 +1218,9 @@ static const uint8_t DISPLAY_ROTATION =
 #endif
 
 void gpioInit() {
+#if PIN_CFG_BTN >= 0
     pinMode(PIN_CFG_BTN, INPUT_PULLUP);
+#endif
     SPI.begin(PIN_EPD_SCK, -1, PIN_EPD_MOSI, PIN_EPD_CS);
 }
 

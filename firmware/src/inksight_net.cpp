@@ -1,8 +1,11 @@
-#include "network.h"
+#include "inksight_net.h"
 #include "config.h"
 #include "storage.h"
 #include "certs.h"
 #include "audio.h"
+#if defined(BOARD_PROFILE_XTEINK_X4)
+#include "x4_buttons.h"
+#endif
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -23,6 +26,12 @@ bool g_suppressAbortCheck = false;
 
 static bool checkAbort() {
     if (g_suppressAbortCheck) return false;
+#if defined(BOARD_PROFILE_XTEINK_X4)
+    if (x4ButtonsCheckAbort()) {
+        g_userAborted = true;
+        return true;
+    }
+#endif
     if (digitalRead(PIN_CFG_BTN) == LOW) {
         delay(50);
         if (digitalRead(PIN_CFG_BTN) == LOW) {
@@ -32,6 +41,8 @@ static bool checkAbort() {
     }
     return false;
 }
+
+static const char DEFAULT_USER_AGENT[] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 static bool beginHttpForUrl(HTTPClient &http, WiFiClient &plainClient, WiFiClientSecure &secClient, const String &url);
 static bool recoverDeviceTokenIfUnauthorized(int code);
@@ -112,7 +123,47 @@ bool connectWiFi() {
         }
     }
 
-    if (!ensureDeviceToken()) return false;
+    // Keep DHCP-provided DNS so private/self-hosted server names can resolve.
+    Serial.printf("[WIFI] Connected! IP=%s GW=%s DNS1=%s DNS2=%s\n",
+                  WiFi.localIP().toString().c_str(),
+                  WiFi.gatewayIP().toString().c_str(),
+                  WiFi.dnsIP(0).toString().c_str(),
+                  WiFi.dnsIP(1).toString().c_str());
+
+    // Synchronize time before checking TLS certificate validity dates.
+    syncNTP();
+
+    // Diagnose server reachability.
+    if (cfgServer.length() > 0) {
+        bool useSSL = false;
+        String host;
+        uint16_t port = 80;
+        String path;
+        if (parseWsServerUrl(cfgServer, useSSL, host, port, path)) {
+            IPAddress srvIp;
+            unsigned long t0 = millis();
+            bool dnsOk = WiFi.hostByName(host.c_str(), srvIp);
+            Serial.printf("[DIAG] Host %s -> %s (DNS %s, took %lums)\n",
+                          host.c_str(),
+                          dnsOk ? srvIp.toString().c_str() : "RESOLVE_FAILED",
+                          dnsOk ? "OK" : "FAIL",
+                          millis() - t0);
+            if (dnsOk) {
+                WiFiClient tcp;
+                t0 = millis();
+                bool tcpOk = tcp.connect(srvIp, port, 4000);
+                Serial.printf("[DIAG] TCP to %s:%d -> %s (took %lums)\n",
+                              srvIp.toString().c_str(), port,
+                              tcpOk ? "CONNECTED" : "FAILED",
+                              millis() - t0);
+                if (tcpOk) tcp.stop();
+            }
+        }
+    }
+
+    if (!ensureDeviceToken()) {
+        Serial.println("[WIFI] Warning: ensureDeviceToken failed, proceeding with connected WiFi");
+    }
     if (cfgPendingPairCode.length() > 0) {
         String mac = WiFi.macAddress();
         String url = cfgServer + "/api/device/" + mac + "/claim-token";
@@ -136,6 +187,13 @@ bool connectWiFi() {
 
             int code = http.POST(body);
             Serial.printf("[PAIR] HTTP code: %d\n", code);
+            if (code < 0 && url.startsWith("https://")) {
+                char sslErr[128] = {0};
+                secClient.lastError(sslErr, sizeof(sslErr));
+                Serial.printf("[PAIR] TLS error: %s (%s)\n",
+                              http.errorToString(code).c_str(), sslErr);
+                // Retry only the configured transport; never weaken TLS after failure.
+            }
             if (code >= 200 && code < 300) {
                 String resp = http.getString();
                 String savedPairCode = extractJsonStringField(resp, "pair_code");
@@ -177,7 +235,11 @@ float readBatteryVoltage() {
     int readings[SAMPLES];
 
     for (int i = 0; i < SAMPLES; i++) {
+#if defined(BOARD_PROFILE_XTEINK_X4)
+        readings[i] = analogReadMilliVolts(PIN_BAT_ADC);
+#else
         readings[i] = analogRead(PIN_BAT_ADC);
+#endif
         delayMicroseconds(100);
     }
 
@@ -196,7 +258,13 @@ float readBatteryVoltage() {
         sum += readings[i];
 
     float avgRaw = (float)sum / (SAMPLES - 2 * DISCARD);
-#if defined(BOARD_PROFILE_ESP32_C3_WROOM02) || defined(BOARD_PROFILE_SMT_WROOM32E)
+#if defined(BOARD_PROFILE_XTEINK_X4)
+    // analogReadMilliVolts utilizes ESP32-C3 eFuse calibration
+    // 10k/10k voltage divider multiplier = 2.0f
+    float realBatteryVoltage = (avgRaw / 1000.0f) * 2.0f;
+    Serial.printf("[BAT-X4] pin=%.1fmV vbat=%.2fV\n", avgRaw, realBatteryVoltage);
+    return realBatteryVoltage;
+#elif defined(BOARD_PROFILE_ESP32_C3_WROOM02) || defined(BOARD_PROFILE_SMT_WROOM32E)
     static esp_adc_cal_characteristics_t adcChars;
     static bool calibrated = false;
     if (!calibrated) {
@@ -245,8 +313,13 @@ static bool readExact(WiFiClient *s, uint8_t *buf, int len) {
 }
 
 static bool beginHttpForUrl(HTTPClient &http, WiFiClient &plainClient, WiFiClientSecure &secClient, const String &url) {
+    http.setUserAgent(DEFAULT_USER_AGENT);
     if (url.startsWith("https://")) {
-        secClient.setCACert(ROOT_CA);
+        if (cfgInsecureTls) {
+            secClient.setInsecure();
+        } else {
+            secClient.setCACert(ROOT_CA);
+        }
         return http.begin(secClient, url);
     }
     return http.begin(plainClient, url);
@@ -453,6 +526,13 @@ bool ensureDeviceToken() {
 
         int code = http.POST("{}");
         Serial.printf("[TOKEN] HTTP code: %d\n", code);
+        if (code < 0 && url.startsWith("https://")) {
+            char sslErr[128] = {0};
+            secClient.lastError(sslErr, sizeof(sslErr));
+            Serial.printf("[TOKEN] TLS error: %s (%s)\n",
+                          http.errorToString(code).c_str(), sslErr);
+            // Retry only the configured transport; never weaken TLS after failure.
+        }
         if (code >= 200 && code < 300) {
             String body = http.getString();
             http.end();
@@ -603,7 +683,7 @@ bool fetchFocusAlertBMP() {
 
 // ── Fetch BMP from backend ──────────────────────────────────
 
-bool fetchBMP(bool nextMode, bool *isFallback, String *renderedModeIdOut) {
+bool fetchBMP(int modeStep, bool *isFallback, String *renderedModeIdOut) {
     if (isFallback) *isFallback = false;
     if (renderedModeIdOut) *renderedModeIdOut = "";
     if (!ensureDeviceToken()) return false;
@@ -626,8 +706,10 @@ bool fetchBMP(bool nextMode, bool *isFallback, String *renderedModeIdOut) {
                + "&w=" + String(W) + "&h=" + String(H)
                + "&bpp=" + String(EPD_BPP)
                + "&colors=" + String(colorCapability);
-    if (nextMode) {
+    if (modeStep > 0) {
         url += "&next=1";
+    } else if (modeStep < 0) {
+        url += "&prev=1";
     }
     Serial.printf("GET %s (RSSI=%d)\n", url.c_str(), rssi);
 
@@ -642,7 +724,12 @@ bool fetchBMP(bool nextMode, bool *isFallback, String *renderedModeIdOut) {
         HTTPClient http;
         bool begun = false;
         if (useSSL) {
-            secClient.setCACert(ROOT_CA);
+            if (cfgInsecureTls) {
+                secClient.setInsecure();
+                Serial.println("[RENDER] Using insecure TLS (skip cert verify)");
+            } else {
+                secClient.setCACert(ROOT_CA);
+            }
             begun = http.begin(secClient, url);
         } else {
             begun = http.begin(plainClient, url);
@@ -652,6 +739,7 @@ bool fetchBMP(bool nextMode, bool *isFallback, String *renderedModeIdOut) {
             http.end();
             return false;
         }
+        http.setUserAgent(DEFAULT_USER_AGENT);
         http.setReuse(false);
         http.setTimeout(HTTP_TIMEOUT);
         http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -667,6 +755,15 @@ bool fetchBMP(bool nextMode, bool *isFallback, String *renderedModeIdOut) {
         Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
         int code = http.GET();
         Serial.printf("HTTP code: %d\n", code);
+
+        if (useSSL && code < 0) {
+            char sslErr[128] = {0};
+            secClient.lastError(sslErr, sizeof(sslErr));
+            Serial.printf("[RENDER] TLS error: %s (%s)\n",
+                          http.errorToString(code).c_str(), sslErr);
+            // Retry only the configured transport; never weaken TLS after failure.
+        }
+
         if (renderedModeIdOut && code >= 200 && code < 300) {
             *renderedModeIdOut = http.header("X-Mode-Id");
         }
@@ -1728,7 +1825,11 @@ bool voiceWsOpen(int sampleRate, int screenW, int screenH, bool includeImage) {
             attempt, useSSL ? "wss" : "ws", host.c_str(), port, path.c_str());
 
         if (useSSL) {
-            gVoiceWsClient.beginSSL(host.c_str(), port, path.c_str(), nullptr, "");
+            if (cfgInsecureTls) {
+                gVoiceWsClient.beginSSL(host.c_str(), port, path.c_str(), nullptr, "");
+            } else {
+                gVoiceWsClient.beginSslWithCA(host.c_str(), port, path.c_str(), ROOT_CA, "");
+            }
         } else {
             gVoiceWsClient.begin(host.c_str(), port, path.c_str(), "");
         }

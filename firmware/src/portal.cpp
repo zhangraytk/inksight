@@ -1,7 +1,7 @@
 #include "portal.h"
 #include "config.h"
 #include "storage.h"
-#include "network.h"
+#include "inksight_net.h"
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -18,6 +18,15 @@ static bool     wifiConnecting = false;
 static String   lastWifiError  = "";
 static bool     pendingRestart = false;
 static unsigned long restartAtMillis = 0;
+static unsigned long portalLastActivityAt = 0;
+
+void portalNotifyActivity() {
+    portalLastActivityAt = millis();
+}
+
+unsigned long portalGetLastActivity() {
+    return portalLastActivityAt;
+}
 
 static WebServer webServer(80);
 static DNSServer dnsServer;
@@ -196,9 +205,11 @@ void startCaptivePortal() {
                   apName.c_str(), WiFi.softAPIP().toString().c_str());
 
     dnsServer.start(53, "*", WiFi.softAPIP());
+    portalNotifyActivity();
 
     // ── Route: Portal home page ─────────────────────────────
     webServer.on("/", HTTP_GET, []() {
+        portalNotifyActivity();
         webServer.send(200, "text/html", PORTAL_HTML);
     });
 
@@ -257,7 +268,8 @@ void startCaptivePortal() {
         float v = readBatteryVoltage();
         String json = "{\"mac\":\"" + WiFi.macAddress() + "\",";
         json += "\"battery\":\"" + String(v, 2) + "V\",";
-        json += "\"server_url\":\"" + cfgServer + "\"}";
+        json += "\"server_url\":\"" + cfgServer + "\",";
+        json += "\"insec_tls\":" + String(cfgInsecureTls ? "true" : "false") + "}";
         webServer.send(200, "application/json", json);
     });
 
@@ -287,6 +299,12 @@ void startCaptivePortal() {
         Serial.printf("\n--- /save_wifi Request ---\n");
         Serial.printf("SSID: %s\n", ssid.c_str());
         Serial.printf("Server: %s\n", serverUrl.c_str());
+
+        if (webServer.hasArg("insec_tls")) {
+            String val = webServer.arg("insec_tls");
+            bool insec = (val == "1" || val == "true");
+            saveInsecureTls(insec);
+        }
 
         if (ssid.length() == 0) {
             Serial.println("Error: SSID empty");
@@ -332,6 +350,12 @@ void startCaptivePortal() {
         Serial.printf("\n--- /connect_saved Request ---\n");
         Serial.printf("SSID: %s\n", ssid.c_str());
         Serial.printf("Server: %s\n", serverUrl.c_str());
+
+        if (webServer.hasArg("insec_tls")) {
+            String val = webServer.arg("insec_tls");
+            bool insec = (val == "1" || val == "true");
+            saveInsecureTls(insec);
+        }
 
         if (ssid.length() == 0) {
             webServer.send(200, "application/json", "{\"ok\":false,\"msg\":\"SSID empty\"}");
@@ -483,6 +507,10 @@ void startCaptivePortal() {
 void handlePortalClients() {
     dnsServer.processNextRequest();
     webServer.handleClient();
+
+    if (WiFi.softAPgetStationNum() > 0) {
+        portalNotifyActivity();
+    }
 
     // Deferred restart after config save
     if (pendingRestart && millis() >= restartAtMillis) {

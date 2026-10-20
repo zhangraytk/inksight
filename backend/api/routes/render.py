@@ -81,6 +81,7 @@ async def render(
 
     start_time = time.time()
     force_next = params.next_mode == 1
+    force_prev = params.prev_mode == 1
 
     try:
         if mac and owner is None:
@@ -180,6 +181,7 @@ async def render(
             screen_w=params.w,
             screen_h=params.h,
             force_next=force_next,
+            force_prev=force_prev,
             skip_cache=skip_cache_for_this_render,
             colors=params.colors,
         )

@@ -50,6 +50,12 @@ _COMPONENT_TREE_SCALE_CAP = float(
         os.getenv("INKSIGHT_648_COMPONENT_SCALE_MAX", "1.35"),
     )
 )
+_800_COMPONENT_SCALE_MAX = float(
+    os.getenv(
+        "INKSIGHT_COMPONENT_TREE_SCALE_MAX",
+        os.getenv("INKSIGHT_800_COMPONENT_SCALE_MAX", "1.55"),
+    )
+)
 _LARGE_PANEL_MIN_W = int(os.getenv("INKSIGHT_LARGE_PANEL_MIN_WIDTH", "648"))
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -367,6 +373,8 @@ def _component_tree_scale(ctx: RenderContext, theme: dict) -> float:
             return max(0.65, float(override))
         except (TypeError, ValueError):
             pass
+    if ctx.screen_w >= 800:
+        return min(raw, _800_COMPONENT_SCALE_MAX)
     if ctx.screen_w >= _LARGE_PANEL_MIN_W:
         return min(raw, _COMPONENT_TREE_SCALE_CAP)
     return raw
@@ -1261,6 +1269,8 @@ def render_json_mode(
     size_key = f"{screen_w}x{screen_h}"
     if size_key in overrides:
         layout = _merge_layout_dict(layout, overrides[size_key])
+    elif screen_w >= 800 and screen_h >= 480 and "648x480" in overrides:
+        layout = _merge_layout_dict(layout, overrides["648x480"])
     layout = expand_layout_presets(layout)
 
     sb = layout.get("status_bar", {})

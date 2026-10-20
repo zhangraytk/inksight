@@ -49,10 +49,11 @@ _font_engine = os.getenv("INKSIGHT_FONT_ENGINE", "bitmap").strip().lower()
 _force_bitmap = _font_engine in {"bitmap", "pixel", "pil"}
 _fontmode = os.getenv("INKSIGHT_TEXT_FONTMODE", "1").strip() or "1"
 _bitmap_suffix_to_load_size = {9: 12, 10: 13, 11: 15, 12: 16, 13: 14}
-# After component-tree scale (~1.35 on 648px+ wide screens), body/title pt often lands in
-# the high teens or low twenties; default 16 blocked PCF and forced anti-aliased TTF on e-ink.
-_bitmap_max_request_size = int(os.getenv("INKSIGHT_BITMAP_MAX_REQUEST_SIZE", "24"))
-_bitmap_max_size_delta = int(os.getenv("INKSIGHT_BITMAP_MAX_SIZE_DELTA", "8"))
+# Available PCF bitmap fonts only cover up to 16px (suffix 12).
+# Capping request size at 16 ensures sizes > 16 properly load TrueType vector fonts at full size
+# instead of clamping down to 16px.
+_bitmap_max_request_size = int(os.getenv("INKSIGHT_BITMAP_MAX_REQUEST_SIZE", "16"))
+_bitmap_max_size_delta = int(os.getenv("INKSIGHT_BITMAP_MAX_SIZE_DELTA", "3"))
 
 
 def apply_text_fontmode(draw: ImageDraw.ImageDraw) -> None:

@@ -18,6 +18,7 @@ int    cfgSleepMin;
 String cfgConfigJson;
 String cfgDeviceToken;
 String cfgPendingPairCode;
+bool   cfgInsecureTls = false;
 
 // ── Multi-WiFi credential list (in-memory, mirrors NVS) ─────
 static String g_wifiSsids[MAX_WIFI_NETWORKS];
@@ -82,6 +83,7 @@ void loadConfig() {
         cfgConfigJson = "";
         cfgDeviceToken = "";
         cfgPendingPairCode = "";
+        cfgInsecureTls = false;
         g_wifiCount = 0;
         return;
     }
@@ -93,6 +95,7 @@ void loadConfig() {
     cfgConfigJson   = prefs.getString("config_json", "");
     cfgDeviceToken  = prefs.getString("device_token", "");
     cfgPendingPairCode = prefs.getString("pair_code", "");
+    cfgInsecureTls  = prefs.getBool("insec_tls", false);
 
     // ── Load multi-WiFi list ────────────────────────────────
     int wifiN = prefs.getInt("wifi_n", -1);
@@ -328,4 +331,13 @@ void clearPendingPairCode() {
     prefs.remove("pair_code");
     prefs.end();
     cfgPendingPairCode = "";
+}
+
+void saveInsecureTls(bool insec) {
+    prefs.begin("inksight", false);
+    prefs.putInt("cfg_version", CONFIG_VERSION);
+    prefs.putBool("insec_tls", insec);
+    prefs.end();
+    cfgInsecureTls = insec;
+    Serial.printf("Insecure TLS saved: %d\n", insec ? 1 : 0);
 }

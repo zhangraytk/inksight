@@ -1,5 +1,6 @@
 Import("env")
 import os
+import subprocess
 
 def merge_bin(source, target, env):
     firmware = str(target[0])
@@ -10,10 +11,9 @@ def merge_bin(source, target, env):
     flash_freq_m = str(int(int(flash_freq) / 1000000)) + "m"
     flash_size = env.GetProjectOption("board_upload.flash_size", board.get("upload.flash_size", "4MB"))
 
-    esptool = os.path.join(
-        env.PioPlatform().get_package_dir("tool-esptoolpy") or "",
-        "esptool.py",
-    )
+    # Use the same tool as ELF-to-BIN: newer platforms ship a native esptool
+    # executable, while older platforms configure an esptool.py script.
+    esptool = env.subst("$OBJCOPY").strip('"')
     output = os.path.join(env.subst("$BUILD_DIR"), "firmware_merged.bin")
 
     extra = env.get("FLASH_EXTRA_IMAGES", [])
@@ -24,7 +24,7 @@ def merge_bin(source, target, env):
     print("==========================")
 
     cmd = [
-        "$PYTHONEXE", esptool,
+        esptool,
         "--chip", mcu,
         "merge_bin",
         "--flash_mode", flash_mode,
@@ -38,6 +38,8 @@ def merge_bin(source, target, env):
 
     cmd.extend(["0x10000", firmware])
 
-    env.Execute(env.VerboseAction(" ".join(cmd), "Merging firmware into single binary"))
+    if esptool.lower().endswith(".py"):
+        cmd.insert(0, env.subst("$PYTHONEXE").strip('"'))
+    return subprocess.call(cmd)
 
 env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", merge_bin)

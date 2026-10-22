@@ -177,10 +177,18 @@ class RenderContext:
     footer_height: int = 30
     colors: int = 2
     footer_top_offset: int = 0
+    has_override: bool = False
+    custom_scale: float | None = None
 
     @property
     def scale(self) -> float:
-        return max(0.92, self.screen_w / 400.0)
+        if self.custom_scale is not None:
+            return self.custom_scale
+        if self.has_override:
+            return 1.0
+        w_scale = max(0.92, self.screen_w / 400.0)
+        h_scale = max(0.65, self.screen_h / 300.0)
+        return min(w_scale, h_scale, 1.35)
 
     @property
     def h_scale(self) -> float:
@@ -189,7 +197,7 @@ class RenderContext:
     @property
     def min_scale(self) -> float:
         """Conservative scale factor based on the more constrained dimension."""
-        return max(0.65, min(self.scale, self.h_scale))
+        return max(0.65, min(max(0.92, self.screen_w / 400.0), self.h_scale))
 
     def __post_init__(self):
         if self.available_width == SCREEN_WIDTH and self.screen_w != SCREEN_WIDTH:
@@ -358,23 +366,26 @@ def _scaled_value(value: Any, scale: float, default: int = 0, minimum: int = 0) 
     return max(minimum, int(raw * scale))
 
 
-def _component_tree_scale(ctx: RenderContext, theme: dict) -> float:
+def _component_tree_scale(ctx: RenderContext, theme: dict, has_override: bool = False) -> float:
     """Return the effective component-tree scale.
 
-    Raw ctx.scale grows with screen width (e.g. 648 px -> 1.62). Applying that fully to font
-    sizes pushes past PCF bitmap coverage and falls back to blurry TTF on e-ink. For wide
-    panels (screen_w >= INKSIGHT_LARGE_PANEL_MIN_WIDTH) we cap by INKSIGHT_COMPONENT_TREE_SCALE_MAX
-    (default 1.35, same legacy cap as the old 648-only branch). Modes may set layout.component_scale.
+    When an explicit resolution override was applied (or inherited from 648x480 for wide panels),
+    font sizes and dimensions were authored in final target pixels, so the default scale is 1.0.
+    For base 400x300 layouts scaled to larger panels, we scale up by min(w_scale, h_scale) capped
+    by INKSIGHT_COMPONENT_TREE_SCALE_MAX so vertical space is not exhausted.
+    Modes may still explicitly override layout.component_scale.
     """
-    raw = ctx.scale
     override = theme.get("component_scale") or theme.get("scale")
     if override is not None:
         try:
             return max(0.65, float(override))
         except (TypeError, ValueError):
             pass
-    if ctx.screen_w >= 800:
-        return min(raw, _800_COMPONENT_SCALE_MAX)
+    if has_override or getattr(ctx, "has_override", False):
+        return 1.0
+    w_scale = max(0.92, ctx.screen_w / 400.0)
+    h_scale = max(0.65, ctx.screen_h / 300.0)
+    raw = min(w_scale, h_scale)
     if ctx.screen_w >= _LARGE_PANEL_MIN_W:
         return min(raw, _COMPONENT_TREE_SCALE_CAP)
     return raw
@@ -434,9 +445,6 @@ def _component_load_font(node: ComponentNode, text: str, theme: dict, scale: flo
 def _fit_line_with_ellipsis(text: str, font: Any, max_width: int) -> str:
     if max_width <= 0:
         return "..."
-    b0 = safe_font_bbox(font, text)
-    if b0[2] - b0[0] <= max_width:
-        return text
     ellipsis = "..."
     eb = safe_font_bbox(font, ellipsis)
     if eb[2] - eb[0] > max_width:
@@ -968,7 +976,10 @@ def _paint_component_node(ctx: RenderContext, node: ComponentNode, theme: dict, 
         side_x = box.x + fw + gap
         sy = box.y
         for i, ln in enumerate(dd.get("side_lines") or []):
-            ctx.draw.text((side_x, sy + i * lh), ln, fill=fill, font=font)
+            line_y = sy + i * lh
+            if line_y + lh > ctx.footer_top - 2:
+                break
+            ctx.draw.text((side_x, line_y), ln, fill=fill, font=font)
         below = dd.get("below_lines") or []
         if below:
             stb = int(dd.get("side_text_bottom") or 0)
@@ -977,7 +988,10 @@ def _paint_component_node(ctx: RenderContext, node: ComponentNode, theme: dict, 
             bx_shift = int(dd.get("below_x_shift") or 0)
             below_x = box.x + bx_shift
             for i, ln in enumerate(below):
-                ctx.draw.text((below_x, by + i * lh), ln, fill=fill, font=font)
+                line_y = by + i * lh
+                if line_y + lh > ctx.footer_top - 2:
+                    break
+                ctx.draw.text((below_x, line_y), ln, fill=fill, font=font)
         return
     if node.kind == "text":
         font = node.draw_data.get("font")
@@ -994,6 +1008,8 @@ def _paint_component_node(ctx: RenderContext, node: ComponentNode, theme: dict, 
             ink_dy = 0
         y = _component_aligned_y(box.y, box.height, total_height, align_y) + ink_dy
         for line in lines:
+            if y + line_height > ctx.footer_top - 2:
+                break
             bbox = font.getbbox(line)
             line_width = bbox[2] - bbox[0]
             if align == "center":
@@ -1023,6 +1039,8 @@ def _paint_component_node(ctx: RenderContext, node: ComponentNode, theme: dict, 
             x = box.x + max(0, (box.width - text_width) // 2) - bbox[0]
         ink_top = _component_aligned_y(box.y, box.height, text_height, align_y)
         y = ink_top - bbox[1]
+        if y + text_height > ctx.footer_top - 2:
+            return
         ctx.draw.text((x, y), text, fill=ctx.resolve_color(node.props), font=font)
         return
     if node.kind == "progress_bar":
@@ -1039,6 +1057,8 @@ def _paint_component_node(ctx: RenderContext, node: ComponentNode, theme: dict, 
         else:
             x = box.x
         y = box.y
+        if y + height > ctx.footer_top - 2:
+            return
         ctx.draw.rectangle([x, y, x + width, y + height], outline=EINK_FG, width=1)
         fill_w = int((width - 2) * ratio)
         if fill_w > 0:
@@ -1051,6 +1071,8 @@ def _paint_component_node(ctx: RenderContext, node: ComponentNode, theme: dict, 
         x0 = box.x + margin_x
         x1 = box.x + max(0, box.width - margin_x)
         y = box.y
+        if y > ctx.footer_top - 2:
+            return
         if style == "short":
             width = min(box.width, _scaled_value(node.props.get("width"), scale, 60, 4))
             x0 = box.x + max(0, (box.width - width) // 2)
@@ -1062,6 +1084,8 @@ def _paint_component_node(ctx: RenderContext, node: ComponentNode, theme: dict, 
             ctx.draw.line([(x0, y), (x1, y)], fill=ctx.resolve_color(node.props), width=line_width)
         return
     if node.kind == "section_box":
+        if box.y >= ctx.footer_top - 2:
+            return
         title = node.draw_data.get("title", "")
         title_font = node.draw_data.get("title_font")
         title_height = node.draw_data.get("title_height", 0)
@@ -1099,6 +1123,7 @@ def _render_component_tree_mode(
     footer_height: int,
     footer_top_offset: int = 0,
     colors: int,
+    has_override: bool = False,
 ) -> RenderContext:
     ctx = RenderContext(
         draw=draw,
@@ -1110,11 +1135,23 @@ def _render_component_tree_mode(
         footer_height=footer_height,
         footer_top_offset=footer_top_offset,
         colors=colors,
+        has_override=has_override,
     )
-    scale = _component_tree_scale(ctx, theme)
+    scale = _component_tree_scale(ctx, theme, has_override=has_override)
     root = _build_component_node(body_tree, content)
     available_height = max(0, ctx.footer_top - status_bar_bottom)
     _measure_component_node(root, screen_w, theme, scale)
+
+    # Dynamic auto-fit: if content overflows available height (e.g. long text from LLM),
+    # gently downscale so content fits neatly without spilling over the footer.
+    # We clamp at 0.78x so fonts remain clearly readable and never become tiny.
+    if root.measured_height > available_height and available_height > 0:
+        shrink_ratio = available_height / float(root.measured_height)
+        adjusted_scale = max(0.78 * scale, scale * shrink_ratio)
+        if adjusted_scale < scale:
+            _measure_component_node(root, screen_w, theme, adjusted_scale)
+            scale = adjusted_scale
+
     root_height = available_height if root.kind == "column" else min(available_height, root.measured_height)
     _layout_component_node(root, 0, status_bar_bottom, screen_w, root_height, theme, scale)
     _paint_component_node(ctx, root, theme, scale)
@@ -1267,10 +1304,13 @@ def render_json_mode(
     layout = mode_def.get("layout", {})
     overrides = mode_def.get("layout_overrides", {})
     size_key = f"{screen_w}x{screen_h}"
+    has_override = False
     if size_key in overrides:
         layout = _merge_layout_dict(layout, overrides[size_key])
+        has_override = True
     elif screen_w >= 800 and screen_h >= 480 and "648x480" in overrides:
         layout = _merge_layout_dict(layout, overrides["648x480"])
+        has_override = True
     layout = expand_layout_presets(layout)
 
     sb = layout.get("status_bar", {})
@@ -1335,6 +1375,7 @@ def render_json_mode(
             footer_height=footer_height,
             footer_top_offset=footer_top_offset,
             colors=colors,
+            has_override=has_override,
         )
     else:
         body_align = layout.get("body_align", "center")
@@ -1348,6 +1389,7 @@ def render_json_mode(
                 draw=draw, img=img, content=content,
                 screen_w=screen_w, screen_h=screen_h,
                 y=status_bar_bottom, footer_height=footer_height, footer_top_offset=footer_top_offset, colors=colors,
+                has_override=has_override,
             )
             _render_centered_text(ctx, body[0], use_full_body=True)
         elif body_align == "center" and body:
@@ -1356,6 +1398,7 @@ def render_json_mode(
                 draw=ImageDraw.Draw(measure_img), img=measure_img, content=content,
                 screen_w=screen_w, screen_h=screen_h,
                 y=status_bar_bottom, footer_height=footer_height, footer_top_offset=footer_top_offset,
+                has_override=has_override,
             )
             apply_text_fontmode(measure_ctx.draw)
             for block in body:
@@ -1371,6 +1414,7 @@ def render_json_mode(
                 screen_w=screen_w, screen_h=screen_h,
                 y=status_bar_bottom + offset, footer_height=footer_height, footer_top_offset=footer_top_offset,
                 colors=colors,
+                has_override=has_override,
             )
             for block in body:
                 if ctx.y >= footer_top - 10:
@@ -1381,6 +1425,7 @@ def render_json_mode(
                 draw=draw, img=img, content=content,
                 screen_w=screen_w, screen_h=screen_h,
                 y=status_bar_bottom, footer_height=footer_height, footer_top_offset=footer_top_offset, colors=colors,
+                has_override=has_override,
             )
             for block in body:
                 if ctx.y >= footer_top - 10:
@@ -1468,15 +1513,18 @@ def _render_centered_text(ctx: RenderContext, block: dict, *, use_full_body: boo
             break
 
     if use_full_body and block.get("vertical_center", True):
-        y_start = ctx.y + (body_height - total_h) // 2
+        y_start = max(ctx.y, ctx.y + (body_height - total_h) // 2)
     else:
         y_start = ctx.y
 
     for i, line in enumerate(lines):
+        line_y = y_start + i * line_h
+        if line_y + line_h > ctx.footer_top - 2:
+            break
         bbox = font.getbbox(line)
         lw = bbox[2] - bbox[0]
         x = ctx.x_offset + (ctx.available_width - lw) // 2
-        ctx.draw.text((x, y_start + i * line_h), line, fill=ctx.resolve_color(block), font=font)
+        ctx.draw.text((x, line_y), line, fill=ctx.resolve_color(block), font=font)
 
     ctx.y = y_start + total_h + 4
 
@@ -1531,7 +1579,7 @@ def _render_text(ctx: RenderContext, block: dict) -> None:
     last_line_h = font_size
     for line in lines:
         line_y = start_y + rendered_lines * line_height
-        if line_y >= ctx.footer_top - 10:
+        if line_y + line_height > ctx.footer_top - 2:
             break
         bbox = font.getbbox(line)
         lw = bbox[2] - bbox[0]
@@ -2283,6 +2331,8 @@ def _measure_column_blocks_height(
         footer_height=ctx.footer_height,
         footer_top_offset=ctx.footer_top_offset,
         colors=ctx.colors,
+        has_override=ctx.has_override,
+        custom_scale=ctx.custom_scale,
     )
     for child in blocks:
         if mc.y >= ctx.footer_top - 10:
@@ -2354,6 +2404,8 @@ def _render_two_column(ctx: RenderContext, block: dict) -> None:
         x_offset=left_x, available_width=left_width,
         footer_height=ctx.footer_height,
         footer_top_offset=ctx.footer_top_offset,
+        has_override=ctx.has_override,
+        custom_scale=ctx.custom_scale,
     )
     right_ctx = RenderContext(
         draw=ctx.draw, img=ctx.img, content=ctx.content,
@@ -2361,6 +2413,8 @@ def _render_two_column(ctx: RenderContext, block: dict) -> None:
         x_offset=right_x, available_width=right_avail,
         footer_height=ctx.footer_height,
         footer_top_offset=ctx.footer_top_offset,
+        has_override=ctx.has_override,
+        custom_scale=ctx.custom_scale,
     )
     for child in block.get("left", []):
         _render_block(left_ctx, child)

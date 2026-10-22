@@ -24,5 +24,46 @@
         "fit": "fill"
       }
     ]
+  },
+  "layout_overrides": {
+    "296x128": {
+      "body": [
+        {
+          "type": "image",
+          "field": "image_url",
+          "width": 296,
+          "height": 104,
+          "fit": "contain",
+          "align_x": "center",
+          "align_y": "center"
+        }
+      ]
+    },
+    "648x480": {
+      "body": [
+        {
+          "type": "image",
+          "field": "image_url",
+          "width": 648,
+          "height": 454,
+          "fit": "contain",
+          "align_x": "center",
+          "align_y": "center"
+        }
+      ]
+    },
+    "800x480": {
+      "body": [
+        {
+          "type": "image",
+          "field": "image_url",
+          "width": 800,
+          "height": 454,
+          "fit": "contain",
+          "align_x": "center",
+          "align_y": "center"
+        }
+      ]
+    }
   }
 }

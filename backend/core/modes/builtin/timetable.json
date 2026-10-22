@@ -26,10 +26,30 @@
           "style": "daily",
           "timetable_title": "周一 · 今日课程",
           "slots": [
-            { "time": "08:00", "name": "高等数学", "location": "A201", "current": false },
-            { "time": "10:00", "name": "大学英语", "location": "B305", "current": true },
-            { "time": "14:00", "name": "数据结构", "location": "C102", "current": false },
-            { "time": "16:00", "name": "体育", "location": "操场", "current": false }
+            {
+              "time": "08:00",
+              "name": "高等数学",
+              "location": "A201",
+              "current": false
+            },
+            {
+              "time": "10:00",
+              "name": "大学英语",
+              "location": "B305",
+              "current": true
+            },
+            {
+              "time": "14:00",
+              "name": "数据结构",
+              "location": "C102",
+              "current": false
+            },
+            {
+              "time": "16:00",
+              "name": "体育",
+              "location": "操场",
+              "current": false
+            }
           ],
           "slot_count": 4,
           "current_day": 0,
@@ -43,10 +63,30 @@
         "style": "daily",
         "timetable_title": "周一 · 今日课程",
         "slots": [
-          { "time": "08:00", "name": "高等数学", "location": "A201", "current": false },
-          { "time": "10:00", "name": "大学英语", "location": "B305", "current": true },
-          { "time": "14:00", "name": "数据结构", "location": "C102", "current": false },
-          { "time": "16:00", "name": "体育", "location": "操场", "current": false }
+          {
+            "time": "08:00",
+            "name": "高等数学",
+            "location": "A201",
+            "current": false
+          },
+          {
+            "time": "10:00",
+            "name": "大学英语",
+            "location": "B305",
+            "current": true
+          },
+          {
+            "time": "14:00",
+            "name": "数据结构",
+            "location": "C102",
+            "current": false
+          },
+          {
+            "time": "16:00",
+            "name": "体育",
+            "location": "操场",
+            "current": false
+          }
         ],
         "slot_count": 4,
         "current_day": 0,
@@ -55,7 +95,10 @@
     ]
   },
   "layout": {
-    "status_bar": { "line_width": 1, "dashed": false },
+    "status_bar": {
+      "line_width": 1,
+      "dashed": false
+    },
     "body_align": "top",
     "body": [
       {
@@ -69,6 +112,53 @@
     "footer": {
       "label": "TIMETABLE",
       "attribution_template": "— InkSight"
+    }
+  },
+  "layout_overrides": {
+    "296x128": {
+      "body": [
+        {
+          "type": "timetable_grid",
+          "field": "slots",
+          "font_size": 11,
+          "location_font_size": 9,
+          "margin_x": 6,
+          "row_height": 22,
+          "time_col_ratio": 0.24,
+          "show_separator": true
+        }
+      ],
+      "footer": {
+        "height": 20
+      }
+    },
+    "648x480": {
+      "body": [
+        {
+          "type": "timetable_grid",
+          "field": "slots",
+          "font_size": 16,
+          "location_font_size": 13,
+          "margin_x": 24,
+          "row_height": 44,
+          "time_col_ratio": 0.2,
+          "show_separator": true
+        }
+      ]
+    },
+    "800x480": {
+      "body": [
+        {
+          "type": "timetable_grid",
+          "field": "slots",
+          "font_size": 18,
+          "location_font_size": 15,
+          "margin_x": 36,
+          "row_height": 52,
+          "time_col_ratio": 0.18,
+          "show_separator": true
+        }
+      ]
     }
   }
 }

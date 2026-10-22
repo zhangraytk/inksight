@@ -134,6 +134,62 @@
         "label": "Life Bar",
         "height": 20
       }
+    },
+    "800x480": {
+      "preset_props": {
+        "top_gap": 16,
+        "padding_x": 44,
+        "gap": 18,
+        "row_gap": 14,
+        "left_panel_width": 335,
+        "right_panel_width": 335,
+        "divider_margin_x": 44,
+        "show_divider": true,
+        "primary_metric": {
+          "label_field": "year_label",
+          "label_font_size": 18,
+          "value_template": "{year_pct}%",
+          "value_font": "noto_serif_bold",
+          "value_font_size": 42,
+          "bar_field": "day_of_year",
+          "bar_max_field": "days_in_year",
+          "bar_width": 712,
+          "bar_height": 14
+        },
+        "left_metric": {
+          "label_field": "month_label",
+          "label_font_size": 16,
+          "value_template": "{month_pct}%",
+          "value_font": "noto_serif_bold",
+          "value_font_size": 30,
+          "bar_field": "day",
+          "bar_max_field": "days_in_month",
+          "bar_width": 335,
+          "bar_height": 10
+        },
+        "right_metric": {
+          "label_field": "week_label",
+          "label_font_size": 16,
+          "value_template": "{week_pct}%",
+          "value_font": "noto_serif_bold",
+          "value_font_size": 30,
+          "bar_field": "weekday_num",
+          "bar_max_field": "week_total",
+          "bar_width": 335,
+          "bar_height": 10
+        },
+        "bottom_metric": {
+          "label_field": "life_label",
+          "label_font_size": 18,
+          "value_template": "{life_pct}%",
+          "value_font": "noto_serif_bold",
+          "value_font_size": 42,
+          "bar_field": "age",
+          "bar_max_field": "life_expect",
+          "bar_width": 712,
+          "bar_height": 14
+        }
+      }
     }
   }
 }

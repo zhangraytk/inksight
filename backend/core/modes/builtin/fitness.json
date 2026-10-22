@@ -221,7 +221,10 @@
         "show_tip_divider": false,
         "tip_field": null
       },
-      "footer": { "label": "FITNESS", "height": 20 }
+      "footer": {
+        "label": "FITNESS",
+        "height": 20
+      }
     },
     "648x480": {
       "preset_props": {
@@ -236,6 +239,22 @@
         "exercise_reps_font_size": 17,
         "tip_divider_margin_x": 40,
         "tip_font_size": 16
+      }
+    },
+    "800x480": {
+      "preset_props": {
+        "top_gap": 18,
+        "padding_x": 36,
+        "title_font_size": 26,
+        "duration_font_size": 20,
+        "header_divider_margin_x": 50,
+        "section_title_font_size": 20,
+        "section_content_indent": 48,
+        "exercise_gap": 9,
+        "exercise_font_size": 18,
+        "exercise_reps_font_size": 18,
+        "tip_divider_margin_x": 50,
+        "tip_font_size": 18
       }
     }
   }

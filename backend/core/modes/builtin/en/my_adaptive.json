@@ -6,11 +6,17 @@
   "description": "Upload up to 6 photos, cycle on each refresh",
   "content": {
     "type": "static",
-    "static_data": {"image_url": ""},
-    "fallback": {"image_url": ""}
+    "static_data": {
+      "image_url": ""
+    },
+    "fallback": {
+      "image_url": ""
+    }
   },
   "layout": {
-    "status_bar": {"line_width": 0},
+    "status_bar": {
+      "line_width": 0
+    },
     "body": [
       {
         "type": "image",
@@ -26,7 +32,9 @@
         "margin_bottom": 0
       }
     ],
-    "footer": {"line_width": 0}
+    "footer": {
+      "line_width": 0
+    }
   },
   "layout_overrides": {
     "296x128": {
@@ -54,6 +62,23 @@
           "height": 231,
           "x": 0,
           "y": 57,
+          "fit": "cover",
+          "photo_enhance": true,
+          "align_x": "center",
+          "align_y": "center",
+          "margin_bottom": 0
+        }
+      ]
+    },
+    "800x480": {
+      "body": [
+        {
+          "type": "image",
+          "field": "image_url",
+          "width": 800,
+          "height": 480,
+          "x": 0,
+          "y": 0,
           "fit": "cover",
           "photo_enhance": true,
           "align_x": "center",

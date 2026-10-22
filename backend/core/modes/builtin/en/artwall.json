@@ -80,7 +80,10 @@
           "max_lines": 1,
           "line_height": 12
         },
-        { "type": "spacer", "height": 3 },
+        {
+          "type": "spacer",
+          "height": 3
+        },
         {
           "type": "image",
           "field": "image_url",
@@ -113,6 +116,32 @@
           "width": 400,
           "height": 214,
           "fit": "cover",
+          "align_x": "center",
+          "align_y": "center"
+        }
+      ]
+    },
+    "800x480": {
+      "body_align": "top",
+      "body": [
+        {
+          "type": "text",
+          "field": "artwork_title",
+          "font": "lora_regular",
+          "font_size": 22,
+          "align": "center",
+          "max_lines": 1
+        },
+        {
+          "type": "spacer",
+          "height": 10
+        },
+        {
+          "type": "image",
+          "field": "image_url",
+          "width": 560,
+          "height": 350,
+          "fit": "contain",
           "align_x": "center",
           "align_y": "center"
         }

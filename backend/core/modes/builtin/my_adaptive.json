@@ -69,6 +69,23 @@
           "margin_bottom": 0
         }
       ]
+    },
+    "800x480": {
+      "body": [
+        {
+          "type": "image",
+          "field": "image_url",
+          "width": 800,
+          "height": 480,
+          "x": 0,
+          "y": 0,
+          "fit": "cover",
+          "photo_enhance": true,
+          "align_x": "center",
+          "align_y": "center",
+          "margin_bottom": 0
+        }
+      ]
     }
   }
 }

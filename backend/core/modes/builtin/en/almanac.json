@@ -461,6 +461,162 @@
           }
         ]
       }
+    },
+    "800x480": {
+      "component_theme": {
+        "body_font": "lora_regular",
+        "body_font_size": 16,
+        "body_line_gap": 6,
+        "section_title_font": "lora_bold",
+        "section_title_font_size": 18,
+        "section_title_gap": 4,
+        "section_content_indent": 36,
+        "section_content_gap": 4
+      },
+      "body": {
+        "type": "row",
+        "padding_x": 20,
+        "padding_y": 14,
+        "gap": 20,
+        "align": "center",
+        "children": [
+          {
+            "type": "box",
+            "width": 220,
+            "children": [
+              {
+                "type": "column",
+                "gap": 8,
+                "children": [
+                  {
+                    "type": "big_number",
+                    "field": "day",
+                    "font_size": 84,
+                    "align": "center"
+                  },
+                  {
+                    "type": "text",
+                    "field": "month_cn",
+                    "font_size": 22,
+                    "align": "center",
+                    "max_lines": 1
+                  },
+                  {
+                    "type": "text",
+                    "field": "weekday_cn",
+                    "font_size": 18,
+                    "align": "center",
+                    "max_lines": 1
+                  },
+                  {
+                    "type": "text",
+                    "field": "solar_term",
+                    "font": "lora_bold",
+                    "font_size": 24,
+                    "align": "center",
+                    "max_lines": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "box",
+            "grow": 1,
+            "padding_x": 12,
+            "children": [
+              {
+                "type": "column",
+                "gap": 10,
+                "children": [
+                  {
+                    "type": "text",
+                    "template": "Lunar {lunar_date_display}",
+                    "font_size": 18,
+                    "font": "lora_bold",
+                    "max_lines": 1
+                  },
+                  {
+                    "type": "row",
+                    "gap": 12,
+                    "children": [
+                      {
+                        "type": "box",
+                        "grow": 1,
+                        "children": [
+                          {
+                            "type": "section_box",
+                            "title": "Do",
+                            "children": [
+                              {
+                                "type": "text",
+                                "field": "yi",
+                                "font": "lora_regular",
+                                "font_size": 16,
+                                "max_lines": 2
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "box",
+                        "grow": 1,
+                        "children": [
+                          {
+                            "type": "section_box",
+                            "title": "Avoid",
+                            "children": [
+                              {
+                                "type": "text",
+                                "field": "ji",
+                                "font": "lora_regular",
+                                "font_size": 16,
+                                "max_lines": 2
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "separator",
+                    "style": "dashed"
+                  },
+                  {
+                    "type": "section_box",
+                    "title": "Deities",
+                    "children": [
+                      {
+                        "type": "text",
+                        "field": "shenwei",
+                        "font": "lora_regular",
+                        "font_size": 15,
+                        "max_lines": 2
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "template": "Constellation {xingsu}",
+                    "font": "lora_regular",
+                    "font_size": 15,
+                    "max_lines": 1
+                  },
+                  {
+                    "type": "text",
+                    "field": "health_tip",
+                    "font": "lora_regular",
+                    "font_size": 16,
+                    "max_lines": 2
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   }
 }

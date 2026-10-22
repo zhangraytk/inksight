@@ -813,3 +813,53 @@ def test_render_context_resolve():
     assert ctx.resolve("{count} items") == "42 items"
     assert ctx.resolve("no placeholders") == "no placeholders"
     assert ctx.resolve("{missing}") == ""
+
+
+def test_two_column_measurement_preserves_resolution_and_custom_scale():
+    from PIL import ImageDraw
+    from core.json_renderer import _measure_column_blocks_height
+
+    for width, height, override, custom_scale in [
+        (400, 300, False, None),
+        (648, 480, True, None),
+        (800, 480, True, None),
+        (296, 128, True, None),
+        (800, 480, True, 1.1),
+    ]:
+        img = Image.new("1", (width, height), 1)
+        ctx = RenderContext(
+            draw=ImageDraw.Draw(img), img=img, content={},
+            screen_w=width, screen_h=height,
+            has_override=override, custom_scale=custom_scale,
+        )
+        measured = _measure_column_blocks_height(
+            ctx, [{"type": "spacer", "height": 20}],
+            x_offset=0, available_width=100,
+        )
+        assert measured == int(20 * ctx.scale), (width, height, custom_scale)
+
+
+def test_two_column_rendering_preserves_resolution_and_custom_scale():
+    from PIL import ImageDraw
+    from core.json_renderer import _render_two_column
+
+    for width, height, override, custom_scale in [
+        (400, 300, False, None),
+        (648, 480, True, None),
+        (800, 480, True, None),
+        (296, 128, True, None),
+        (800, 480, True, 1.1),
+    ]:
+        img = Image.new("1", (width, height), 1)
+        ctx = RenderContext(
+            draw=ImageDraw.Draw(img), img=img, content={},
+            screen_w=width, screen_h=height, y=10,
+            has_override=override, custom_scale=custom_scale,
+        )
+        _render_two_column(ctx, {
+            "type": "two_column", "left_width": 100, "gap": 5,
+            "stack_when_short": False,
+            "left": [{"type": "spacer", "height": 20}],
+            "right": [{"type": "spacer", "height": 10}],
+        })
+        assert ctx.y == 10 + int(20 * ctx.scale), (width, height, custom_scale)

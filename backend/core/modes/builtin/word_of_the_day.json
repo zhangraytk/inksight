@@ -8,10 +8,22 @@
     "type": "llm_json",
     "prompt_template": "你是一位英语语言专家。根据当前情境，精选一个值得学习的英语单词，并提供其简明释义。\n用 JSON 输出：{{\"word\": \"单词拼写\", \"phonetic\": \"音标（可选）\", \"definition\": \"简明中文释义（15字以内）\", \"example\": \"简短英文例句（可选，20词以内）\"}}\n确保单词适合日常学习。\n环境：{context}",
     "output_schema": {
-      "word": { "type": "string", "default": "Serendipity" },
-      "phonetic": { "type": "string", "default": "/ˌser.ənˈdɪp.ə.ti/" },
-      "definition": { "type": "string", "default": "意外发现美好事物的能力" },
-      "example": { "type": "string", "default": "Traveling is full of serendipity." }
+      "word": {
+        "type": "string",
+        "default": "Serendipity"
+      },
+      "phonetic": {
+        "type": "string",
+        "default": "/ˌser.ənˈdɪp.ə.ti/"
+      },
+      "definition": {
+        "type": "string",
+        "default": "意外发现美好事物的能力"
+      },
+      "example": {
+        "type": "string",
+        "default": "Traveling is full of serendipity."
+      }
     },
     "temperature": 0.8,
     "fallback": {
@@ -22,7 +34,9 @@
     }
   },
   "layout": {
-    "status_bar": { "line_width": 1 },
+    "status_bar": {
+      "line_width": 1
+    },
     "layout_engine": "component_tree",
     "body_preset": "word_card",
     "preset_props": {
@@ -47,7 +61,10 @@
       "example_font_size": 12,
       "example_max_lines": 2
     },
-    "footer": { "label": "WORD", "attribution_template": "— Daily Learning" }
+    "footer": {
+      "label": "WORD",
+      "attribution_template": "— Daily Learning"
+    }
   },
   "layout_overrides": {
     "296x128": {
@@ -66,7 +83,10 @@
         "padding_top": 4,
         "padding_bottom": 12
       },
-      "footer": { "label": "WORD", "height": 18 }
+      "footer": {
+        "label": "WORD",
+        "height": 18
+      }
     },
     "648x480": {
       "preset_props": {
@@ -79,7 +99,17 @@
         "definition_font_size": 20,
         "example_font_size": 14
       }
+    },
+    "800x480": {
+      "preset_props": {
+        "padding_x": 28,
+        "gap": 12,
+        "word_inset_x": 40,
+        "word_font_size": 72,
+        "phonetic_font_size": 16,
+        "definition_font_size": 22,
+        "example_font_size": 16
+      }
     }
   }
 }
-

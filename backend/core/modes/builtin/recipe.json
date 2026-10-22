@@ -8,11 +8,26 @@
     "type": "llm_json",
     "prompt_template": "你是一位营养师。根据当前季节推荐一套简洁的早中晚三餐方案。\n输出 JSON：{{\"season\":\"季节（如：早春）\",\"breakfast\":\"早餐（15字以内）\",\"lunch\":\"午餐（15字以内）\",\"dinner\":\"晚餐（15字以内）\",\"tip\":\"一句养生小贴士（15字以内）\"}}\n要求：简洁明了；早中晚每项内如有多个菜式，必须用间隔号「·」分隔，且「·」两侧各加一个空格（例：小米粥 · 茶叶蛋 · 凉拌菠菜）。只输出 JSON。\n环境：{context}",
     "output_schema": {
-      "season": { "type": "string", "default": "早春" },
-      "breakfast": { "type": "string", "default": "小米粥 · 茶叶蛋 · 凉拌黑木耳" },
-      "lunch": { "type": "string", "default": "番茄炖牛腩 · 清炒芥兰 · 白米饭" },
-      "dinner": { "type": "string", "default": "清蒸鲈鱼 · 蒜蓉西兰花 · 蛋花汤" },
-      "tip": { "type": "string", "default": "春季宜养肝，多食绿色蔬菜" }
+      "season": {
+        "type": "string",
+        "default": "早春"
+      },
+      "breakfast": {
+        "type": "string",
+        "default": "小米粥 · 茶叶蛋 · 凉拌黑木耳"
+      },
+      "lunch": {
+        "type": "string",
+        "default": "番茄炖牛腩 · 清炒芥兰 · 白米饭"
+      },
+      "dinner": {
+        "type": "string",
+        "default": "清蒸鲈鱼 · 蒜蓉西兰花 · 蛋花汤"
+      },
+      "tip": {
+        "type": "string",
+        "default": "春季宜养肝，多食绿色蔬菜"
+      }
     },
     "post_process": {
       "breakfast": "recipe_normalize_item_sep",
@@ -52,7 +67,10 @@
   },
   "layout": {
     "layout_engine": "component_tree",
-    "status_bar": { "line_width": 1, "dashed": false },
+    "status_bar": {
+      "line_width": 1,
+      "dashed": false
+    },
     "body_preset": "recipe_card",
     "preset_props": {
       "season_field": "season",
@@ -97,7 +115,10 @@
         "dinner_label": "晚",
         "compact_tip_field": null
       },
-      "footer": { "label": "RECIPE", "height": 20 }
+      "footer": {
+        "label": "RECIPE",
+        "height": 20
+      }
     },
     "648x480": {
       "preset_props": {
@@ -108,6 +129,18 @@
         "meal_font_size": 17,
         "tip_font_size": 16,
         "tip_divider_margin_x": 48
+      }
+    },
+    "800x480": {
+      "preset_props": {
+        "padding_x": 40,
+        "gap": 14,
+        "season_font_size": 26,
+        "separator_width": 160,
+        "section_font_size": 20,
+        "meal_font_size": 18,
+        "tip_font_size": 17,
+        "tip_divider_margin_x": 60
       }
     }
   }

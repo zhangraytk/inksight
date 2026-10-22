@@ -95,7 +95,7 @@
         "padding_x": 20,
         "quote_inset_x": 28,
         "quote_font_size": 22,
-        "quote_max_lines": 4
+        "quote_max_lines": 6
       }
     },
     "800x480": {
@@ -103,7 +103,7 @@
         "padding_x": 28,
         "quote_inset_x": 44,
         "quote_font_size": 28,
-        "quote_max_lines": 4
+        "quote_max_lines": 8
       }
     }
   }
